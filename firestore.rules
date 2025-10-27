@@ -1,0 +1,79 @@
+/**
+ * @file Firestore Security Rules
+ * @generated Tue Oct 17 2024
+ *
+ * @description This ruleset allows open access to all data in the Firestore database, effectively disabling all security restrictions.
+ * @data_structure All data is stored in Firestore collections. There are collections to represent users, clients, subscriptions, WhatsApp connections, automations and notes.
+ * @security_decisions All read and write operations are allowed for all users, regardless of authentication status. This configuration is intended for development or testing purposes only and is NOT suitable for production environments.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * @description Allows anyone to read and write user data.
+     * @path /users/{userId}
+     * @allow (get, list, create, update, delete) Any user can perform any operation.
+     * @deny None, all operations are allowed.
+     * @principle Disables all security, allowing open access.
+     */
+    match /users/{userId} {
+      allow get, list, create, update, delete: if true;
+    }
+
+    /**
+     * @description Allows anyone to read and write client data.
+     * @path /users/{userId}/clients/{clientId}
+     * @allow (get, list, create, update, delete) Any user can perform any operation.
+     * @deny None, all operations are allowed.
+     * @principle Disables all security, allowing open access.
+     */
+    match /users/{userId}/clients/{clientId} {
+      allow get, list, create, update, delete: if true;
+    }
+
+    /**
+     * @description Allows anyone to read and write subscription data.
+     * @path /users/{userId}/subscriptions/{subscriptionId}
+     * @allow (get, list, create, update, delete) Any user can perform any operation.
+     * @deny None, all operations are allowed.
+     * @principle Disables all security, allowing open access.
+     */
+    match /users/{userId}/subscriptions/{subscriptionId} {
+      allow get, list, create, update, delete: if true;
+    }
+
+     /**
+      * @description Allows anyone to read and write whatsapp_connection data.
+      * @path /users/{userId}/whatsapp_connection/{connectionId}
+      * @allow (get, list, create, update, delete) Any user can perform any operation.
+      * @deny None, all operations are allowed.
+      * @principle Disables all security, allowing open access.
+      */
+    match /users/{userId}/whatsapp_connection/{connectionId} {
+      allow get, list, create, update, delete: if true;
+    }
+
+    /**
+     * @description Allows anyone to read and write automation data.
+     * @path /users/{userId}/automation/{automationId}
+     * @allow (get, list, create, update, delete) Any user can perform any operation.
+     * @deny None, all operations are allowed.
+     * @principle Disables all security, allowing open access.
+     */
+    match /users/{userId}/automation/{automationId} {
+      allow get, list, create, update, delete: if true;
+    }
+
+    /**
+     * @description Allows anyone to read and write note data.
+     * @path /users/{userId}/notes/{noteId}
+     * @allow (get, list, create, update, delete) Any user can perform any operation.
+     * @deny None, all operations are allowed.
+     * @principle Disables all security, allowing open access.
+     */
+    match /users/{userId}/notes/{noteId} {
+      allow get, list, create, update, delete: if true;
+    }
+  }
+}
