@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -48,7 +48,7 @@ import {
     TableRow,
   } from "@/components/ui/table"
 import { Textarea } from './ui/textarea';
-import { sendMessage, getStatus } from '@/app/actions';
+import { sendMessage, getStatus, sendToGroupWebhook } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Loader } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from './ui/card';
@@ -184,7 +184,7 @@ const AppDashboard = () => {
     const [isTransitioningPage, startTransition] = useTransition();
     const { toast } = useToast();
 
-    const messagingPaths = ['/automacao', '/automacao/remarketing'];
+    const messagingPaths = ['/automacao', '/automacao/remarketing', '/automacao/grupos'];
     const clientPaths = ['/clientes', '/clientes/suporte'];
     const [isMessagingMenuOpen, setIsMessagingMenuOpen] = useState(messagingPaths.some(p => pathname.startsWith(p)));
     const [isClientMenuOpen, setIsClientMenuOpen] = useState(clientPaths.some(p => pathname.startsWith(p)));
@@ -457,6 +457,8 @@ const AppDashboard = () => {
                 return <AutomationPage config={automationSettings} />;
             case '/automacao/remarketing':
                 return <RemarketingPage config={automationSettings} />;
+            case '/automacao/grupos':
+                return <GroupsPage />;
             case '/configuracoes':
                 return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} />;
             default:
@@ -542,6 +544,11 @@ const AppDashboard = () => {
                             <Link href="/automacao/remarketing" onClick={(e) => { e.preventDefault(); startTransition(() => { window.history.pushState(null, '', '/automacao/remarketing'); }); }}>
                                 <SidebarMenuButton variant="ghost" className="w-full justify-start" isActive={pathname === '/automacao/remarketing'}>
                                     <Flame/> Remarketing
+                                </SidebarMenuButton>
+                            </Link>
+                            <Link href="/automacao/grupos" onClick={(e) => { e.preventDefault(); startTransition(() => { window.history.pushState(null, '', '/automacao/grupos'); }); }}>
+                                <SidebarMenuButton variant="ghost" className="w-full justify-start" isActive={pathname === '/automacao/grupos'}>
+                                    <Users2/> Grupos
                                 </SidebarMenuButton>
                             </Link>
                         </div>
@@ -2983,6 +2990,77 @@ const NotesPage = ({ notes }: { notes: Note[] }) => {
         </div>
     );
 }
+
+const GroupsPage = () => {
+    const [groupCode, setGroupCode] = useState('');
+    const [isPending, startTransition] = useTransition();
+    const { toast } = useToast();
+
+    const handleSendToWebhook = () => {
+        if (!groupCode.trim()) {
+            toast({
+                variant: 'destructive',
+                title: 'Código Inválido',
+                description: 'Por favor, insira um código de grupo.',
+            });
+            return;
+        }
+
+        startTransition(async () => {
+            try {
+                const result = await sendToGroupWebhook(groupCode);
+                if (result.error) {
+                    throw new Error(result.error);
+                }
+                toast({
+                    title: 'Sucesso!',
+                    description: `Código do grupo "${groupCode}" enviado para o webhook.`,
+                });
+                setGroupCode('');
+            } catch (error) {
+                toast({
+                    variant: 'destructive',
+                    title: 'Falha no Envio',
+                    description: error instanceof Error ? error.message : "Não foi possível enviar o código para o webhook.",
+                });
+            }
+        });
+    };
+
+    return (
+        <div className="w-full space-y-6">
+            <div className='text-center sm:text-left'>
+                <h2 className="text-2xl font-bold">Enviar Código do Grupo</h2>
+                <p className="text-muted-foreground">Envie um código de grupo para o webhook configurado.</p>
+            </div>
+            <Card className="max-w-lg mx-auto">
+                <CardHeader>
+                    <CardTitle>Disparo para Grupo</CardTitle>
+                    <CardDescription>
+                        Insira o código do grupo e clique em enviar para disparar o webhook.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="space-y-2">
+                        <Label htmlFor="group-code">Código do Grupo</Label>
+                        <Input
+                            id="group-code"
+                            placeholder="Insira o código aqui..."
+                            value={groupCode}
+                            onChange={(e) => setGroupCode(e.target.value)}
+                        />
+                    </div>
+                </CardContent>
+                <CardFooter>
+                    <Button onClick={handleSendToWebhook} disabled={isPending} className="w-full">
+                        {isPending ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                        Enviar
+                    </Button>
+                </CardFooter>
+            </Card>
+        </div>
+    );
+};
 
 
 export default AppDashboard;
