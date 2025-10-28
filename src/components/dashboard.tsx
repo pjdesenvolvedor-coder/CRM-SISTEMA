@@ -2995,6 +2995,7 @@ const GroupsPage = () => {
     const [groupCode, setGroupCode] = useState('');
     const [isPending, startTransition] = useTransition();
     const { toast } = useToast();
+    const [groupJid, setGroupJid] = useState<string | null>(null);
 
     const handleSendToWebhook = () => {
         if (!groupCode.trim()) {
@@ -3005,19 +3006,26 @@ const GroupsPage = () => {
             });
             return;
         }
-
+        setGroupJid(null);
         startTransition(async () => {
             try {
                 const result = await sendToGroupWebhook(groupCode);
                 if (result.error) {
                     throw new Error(result.error);
                 }
-                toast({
-                    title: 'Sucesso!',
-                    description: `Código do grupo "${groupCode}" enviado para o webhook.`,
-                });
+                
+                if (result.JID) {
+                    setGroupJid(result.JID);
+                    toast({
+                        title: 'Sucesso!',
+                        description: `Código do grupo "${groupCode}" enviado para o webhook.`,
+                    });
+                } else {
+                    throw new Error("Webhook não retornou um JID.");
+                }
                 setGroupCode('');
             } catch (error) {
+                setGroupJid(null);
                 toast({
                     variant: 'destructive',
                     title: 'Falha no Envio',
@@ -3027,37 +3035,65 @@ const GroupsPage = () => {
         });
     };
 
+    const handleCopyJid = () => {
+        if (!groupJid) return;
+        navigator.clipboard.writeText(groupJid).then(() => {
+            toast({
+                title: "Copiado!",
+                description: "O Código do Grupo foi copiado."
+            });
+        });
+    };
+
     return (
         <div className="w-full space-y-6">
             <div className='text-center sm:text-left'>
                 <h2 className="text-2xl font-bold">Enviar Código do Grupo</h2>
                 <p className="text-muted-foreground">Envie um código de grupo para o webhook configurado.</p>
             </div>
-            <Card className="max-w-lg mx-auto">
-                <CardHeader>
-                    <CardTitle>Disparo para Grupo</CardTitle>
-                    <CardDescription>
-                        Insira o código do grupo e clique em enviar para disparar o webhook.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="space-y-2">
-                        <Label htmlFor="group-code">Código do Grupo</Label>
-                        <Input
-                            id="group-code"
-                            placeholder="Insira o código aqui..."
-                            value={groupCode}
-                            onChange={(e) => setGroupCode(e.target.value)}
-                        />
-                    </div>
-                </CardContent>
-                <CardFooter>
-                    <Button onClick={handleSendToWebhook} disabled={isPending} className="w-full">
-                        {isPending ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                        Enviar
-                    </Button>
-                </CardFooter>
-            </Card>
+            <div className="grid gap-6 max-w-lg mx-auto">
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Disparo para Grupo</CardTitle>
+                        <CardDescription>
+                            Insira o código do grupo e clique em enviar para disparar o webhook.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="space-y-2">
+                            <Label htmlFor="group-code">Código do Grupo</Label>
+                            <Input
+                                id="group-code"
+                                placeholder="Insira o código aqui..."
+                                value={groupCode}
+                                onChange={(e) => setGroupCode(e.target.value)}
+                            />
+                        </div>
+                    </CardContent>
+                    <CardFooter>
+                        <Button onClick={handleSendToWebhook} disabled={isPending} className="w-full">
+                            {isPending ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                            Enviar
+                        </Button>
+                    </CardFooter>
+                </Card>
+
+                {groupJid && (
+                     <Card>
+                        <CardHeader>
+                            <CardTitle>Código do Grupo Retornado</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                           <div className="flex items-center justify-between gap-4 p-3 bg-muted rounded-md">
+                                <span className="text-sm font-mono break-all">{groupJid}</span>
+                                <Button variant="ghost" size="icon" onClick={handleCopyJid}>
+                                    <Copy className="h-4 w-4" />
+                                </Button>
+                           </div>
+                        </CardContent>
+                    </Card>
+                )}
+            </div>
         </div>
     );
 };
