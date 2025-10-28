@@ -3048,13 +3048,13 @@ const GroupsPage = () => {
     return (
         <div className="w-full space-y-6">
             <div className='text-center sm:text-left'>
-                <h2 className="text-2xl font-bold">Enviar Código do Grupo</h2>
+                <h2 className="text-2xl font-bold">Obter código do grupo</h2>
                 <p className="text-muted-foreground">Envie um código de grupo para o webhook configurado.</p>
             </div>
             <div className="grid gap-6 max-w-lg mx-auto">
                 <Card>
                     <CardHeader>
-                        <CardTitle>Disparo para Grupo</CardTitle>
+                        <CardTitle>Obter código do grupo</CardTitle>
                         <CardDescription>
                             Cole apenas o código do link de convite. Ex: do link https://chat.whatsapp.com/JlgDbPX9Q4g7Kij2xzlx6R, cole apenas JlgDbPX9Q4g7Kij2xzlx6R.
                         </CardDescription>
@@ -3100,3 +3100,5 @@ const GroupsPage = () => {
 
 
 export default AppDashboard;
+
+    
