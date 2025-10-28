@@ -3001,8 +3001,8 @@ const GroupsPage = () => {
         if (!groupCode.trim()) {
             toast({
                 variant: 'destructive',
-                title: 'Código Inválido',
-                description: 'Por favor, insira um código de grupo.',
+                title: 'Link Inválido',
+                description: 'Por favor, insira o código do link do grupo.',
             });
             return;
         }
@@ -3018,7 +3018,7 @@ const GroupsPage = () => {
                     setGroupJid(result.JID);
                     toast({
                         title: 'Sucesso!',
-                        description: `Código do grupo "${groupCode}" enviado para o webhook.`,
+                        description: `Código do grupo enviado para o webhook.`,
                     });
                 } else {
                     throw new Error("Webhook não retornou um JID.");
@@ -3056,15 +3056,15 @@ const GroupsPage = () => {
                     <CardHeader>
                         <CardTitle>Disparo para Grupo</CardTitle>
                         <CardDescription>
-                            Insira o código do grupo e clique em enviar para disparar o webhook.
+                            Cole apenas o código do link de convite. Ex: do link https://chat.whatsapp.com/JlgDbPX9Q4g7Kij2xzlx6R, cole apenas JlgDbPX9Q4g7Kij2xzlx6R.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div className="space-y-2">
-                            <Label htmlFor="group-code">Código do Grupo</Label>
+                            <Label htmlFor="group-code">Link do grupo do zap</Label>
                             <Input
                                 id="group-code"
-                                placeholder="Insira o código aqui..."
+                                placeholder="Insira o código do convite aqui..."
                                 value={groupCode}
                                 onChange={(e) => setGroupCode(e.target.value)}
                             />
