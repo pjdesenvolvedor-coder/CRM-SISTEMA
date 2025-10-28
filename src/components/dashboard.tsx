@@ -48,7 +48,7 @@ import {
     TableRow,
   } from "@/components/ui/table"
 import { Textarea } from './ui/textarea';
-import { sendMessage, getStatus, sendToGroupWebhook } from '@/app/actions';
+import { sendMessage, getStatus, sendToGroupWebhook, sendGroupMessage } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Loader } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from './ui/card';
@@ -458,7 +458,7 @@ const AppDashboard = () => {
             case '/automacao/remarketing':
                 return <RemarketingPage config={automationSettings} />;
             case '/automacao/grupos':
-                return <GroupsPage />;
+                return <GroupsPage clients={transformedClients} />;
             case '/configuracoes':
                 return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} />;
             default:
@@ -2365,7 +2365,7 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
 };
   
 
-const SendMessageDialog = ({ client, trigger }: { client: Client; trigger: React.ReactNode }) => {
+const SendMessageDialog = ({ client, trigger, useGroupWebhook }: { client: Client; trigger: React.ReactNode; useGroupWebhook?: boolean; }) => {
     const [isMessageDialogOpen, setIsMessageDialogOpen] = useState(false);
     const [message, setMessage] = useState('');
     const [isPending, startTransition] = useTransition();
@@ -2383,7 +2383,9 @@ const SendMessageDialog = ({ client, trigger }: { client: Client; trigger: React
 
       startTransition(async () => {
         try {
-          const result = await sendMessage(client.phone, message);
+          const sendMessageFn = useGroupWebhook ? sendGroupMessage : sendMessage;
+          const result = await sendMessageFn(client.phone, message);
+
           if (result.error) {
             throw new Error(result.error);
           }
@@ -2991,7 +2993,7 @@ const NotesPage = ({ notes }: { notes: Note[] }) => {
     );
 }
 
-const GroupsPage = () => {
+const GroupsPage = ({ clients }: { clients: Client[] }) => {
     const [groupCode, setGroupCode] = useState('');
     const [isPending, startTransition] = useTransition();
     const { toast } = useToast();
@@ -3048,51 +3050,221 @@ const GroupsPage = () => {
     return (
         <div className="w-full space-y-6">
             <div className='text-center sm:text-left'>
-                <h2 className="text-2xl font-bold">Obter código do grupo</h2>
-                <p className="text-muted-foreground">Envie um código de grupo para o webhook configurado.</p>
+                <h2 className="text-2xl font-bold">Gerenciamento de Grupos</h2>
+                <p className="text-muted-foreground">Obtenha códigos de grupo e envie mensagens.</p>
             </div>
-            <div className="grid gap-6 max-w-lg mx-auto">
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Obter código do grupo</CardTitle>
-                        <CardDescription>
-                            Cole apenas o código do link de convite. Ex: do link https://chat.whatsapp.com/JlgDbPX9Q4g7Kij2xzlx6R, cole apenas JlgDbPX9Q4g7Kij2xzlx6R.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="space-y-2">
-                            <Label htmlFor="group-code">Link do grupo do zap</Label>
-                            <Input
-                                id="group-code"
-                                placeholder="Insira o código do convite aqui..."
-                                value={groupCode}
-                                onChange={(e) => setGroupCode(e.target.value)}
-                            />
-                        </div>
-                    </CardContent>
-                    <CardFooter>
-                        <Button onClick={handleSendToWebhook} disabled={isPending} className="w-full">
-                            {isPending ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                            Enviar
-                        </Button>
-                    </CardFooter>
-                </Card>
-
-                {groupJid && (
-                     <Card>
-                        <CardHeader>
-                            <CardTitle>Código do Grupo Retornado</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                           <div className="flex items-center justify-between gap-4 p-3 bg-muted rounded-md">
-                                <span className="text-sm font-mono break-all">{groupJid}</span>
-                                <Button variant="ghost" size="icon" onClick={handleCopyJid}>
-                                    <Copy className="h-4 w-4" />
+            <Tabs defaultValue="get-code" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="get-code">Obter Código do Grupo</TabsTrigger>
+                    <TabsTrigger value="send-messages">Mensagens para Grupo</TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="get-code">
+                    <div className="grid gap-6 max-w-lg mx-auto pt-6">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Obter código do grupo</CardTitle>
+                                <CardDescription>
+                                    Cole apenas o código do link de convite. Ex: do link https://chat.whatsapp.com/JlgDbPX9Q4g7Kij2xzlx6R, cole apenas JlgDbPX9Q4g7Kij2xzlx6R.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="space-y-2">
+                                    <Label htmlFor="group-code">Link do grupo do zap</Label>
+                                    <Input
+                                        id="group-code"
+                                        placeholder="Insira o código do convite aqui..."
+                                        value={groupCode}
+                                        onChange={(e) => setGroupCode(e.target.value)}
+                                    />
+                                </div>
+                            </CardContent>
+                            <CardFooter>
+                                <Button onClick={handleSendToWebhook} disabled={isPending} className="w-full">
+                                    {isPending ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                                    Enviar
                                 </Button>
-                           </div>
-                        </CardContent>
-                    </Card>
-                )}
+                            </CardFooter>
+                        </Card>
+
+                        {groupJid && (
+                             <Card>
+                                <CardHeader>
+                                    <CardTitle>Código do Grupo Retornado</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                   <div className="flex items-center justify-between gap-4 p-3 bg-muted rounded-md">
+                                        <span className="text-sm font-mono break-all">{groupJid}</span>
+                                        <Button variant="ghost" size="icon" onClick={handleCopyJid}>
+                                            <Copy className="h-4 w-4" />
+                                        </Button>
+                                   </div>
+                                </CardContent>
+                            </Card>
+                        )}
+                    </div>
+                </TabsContent>
+
+                <TabsContent value="send-messages">
+                    <GroupMessageSender clients={clients} />
+                </TabsContent>
+            </Tabs>
+        </div>
+    );
+};
+
+const GroupMessageSender = ({ clients }: { clients: Client[] }) => {
+    const [sortConfig, setSortConfig] = useState<{ key: SortableClientKeys; direction: 'ascending' | 'descending' } | null>({ key: 'name', direction: 'ascending' });
+    const [searchTerm, setSearchTerm] = useState('');
+    const [inputValue, setInputValue] = useState('');
+
+    const handleSearch = () => {
+        setSearchTerm(inputValue);
+    };
+
+    const handleClearSearch = () => {
+        setInputValue('');
+        setSearchTerm('');
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            handleSearch();
+        }
+    };
+
+    const filteredClients = useMemo(() => {
+        if (!searchTerm) return clients;
+        const lowercasedFilter = searchTerm.toLowerCase();
+        return clients.filter(client => 
+            client.name.toLowerCase().includes(lowercasedFilter) ||
+            client.emails.some(email => email.toLowerCase().includes(lowercasedFilter)) ||
+            client.status.toLowerCase().includes(lowercasedFilter) ||
+            client.subscription.toLowerCase().includes(lowercasedFilter)
+        );
+    }, [clients, searchTerm]);
+
+    const sortedClients = useMemo(() => {
+        let sortableClients = [...filteredClients];
+        if (sortConfig !== null) {
+            sortableClients.sort((a, b) => {
+                const aValue = a[sortConfig.key];
+                const bValue = b[sortConfig.key];
+
+                if (aValue === null || aValue === undefined) return 1;
+                if (bValue === null || bValue === undefined) return -1;
+                
+                let comparison = 0;
+                if(sortConfig.key === 'emails') {
+                    comparison = (aValue[0] || '').localeCompare(bValue[0] || '');
+                } else if (aValue instanceof Date && bValue instanceof Date) {
+                    comparison = aValue.getTime() - bValue.getTime();
+                } else if (typeof aValue === 'string' && typeof bValue === 'string') {
+                    comparison = aValue.localeCompare(bValue);
+                } else {
+                    if (aValue < bValue) {
+                        comparison = -1;
+                    }
+                    if (aValue > bValue) {
+                        comparison = 1;
+                    }
+                }
+
+                return sortConfig.direction === 'ascending' ? comparison : -comparison;
+            });
+        }
+        return sortableClients;
+    }, [filteredClients, sortConfig]);
+
+    const requestSort = (key: SortableClientKeys) => {
+        let direction: 'ascending' | 'descending' = 'ascending';
+        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
+            direction = 'descending';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const getSortIndicator = (key: SortableClientKeys) => {
+        if (!sortConfig || sortConfig.key !== key) {
+            return <ArrowUpDown className="ml-2 h-4 w-4 text-muted-foreground/50" />;
+        }
+        return sortConfig.direction === 'ascending' ? <ChevronUp className="ml-2 h-4 w-4" /> : <ChevronDown className="ml-2 h-4 w-4" />;
+    };
+
+    return (
+        <div className="w-full flex flex-col h-full pt-6">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
+                <div className='flex-shrink-0 text-center sm:text-left'>
+                    <h3 className="text-lg font-bold">Disparo para Clientes</h3>
+                    <p className="text-sm text-muted-foreground">Selecione um cliente para enviar uma mensagem via o webhook de grupo.</p>
+                </div>
+                <div className='w-full sm:w-auto flex-grow max-w-sm relative'>
+                    <Input 
+                        placeholder="Pesquisar cliente..."
+                        value={inputValue}
+                        onChange={(e) => setInputValue(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        className="w-full pr-10"
+                    />
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8"
+                        onClick={searchTerm ? handleClearSearch : handleSearch}
+                    >
+                        {searchTerm ? <XIcon className="h-4 w-4" /> : <Search className="h-4 w-4" />}
+                        <span className="sr-only">{searchTerm ? 'Limpar pesquisa' : 'Pesquisar'}</span>
+                    </Button>
+                </div>
+            </div>
+            <div className="flex-grow border rounded-lg overflow-x-auto">
+                <ScrollArea className="h-full max-h-[60vh]">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead onClick={() => requestSort('name')} className="cursor-pointer">
+                                    <div className="flex items-center">
+                                        Nome {getSortIndicator('name')}
+                                    </div>
+                                </TableHead>
+                                <TableHead className="hidden md:table-cell">Telefone</TableHead>
+                                <TableHead className="text-right">Ações</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {sortedClients.length > 0 ? (
+                                sortedClients.map((client) => (
+                                <TableRow key={client.id}>
+                                    <TableCell className="font-medium">
+                                        <div className="flex items-center gap-2">
+                                            {client.isResale ? (
+                                                <Users className="h-5 w-5 text-red-500 flex-shrink-0" />
+                                            ) : (
+                                                <User className="h-5 w-5 text-yellow-400 flex-shrink-0" />
+                                            )}
+                                            <span className="truncate">{client.name}</span>
+                                        </div>
+                                    </TableCell>
+                                    <TableCell className="hidden md:table-cell">{client.phone}</TableCell>
+                                    <TableCell className="text-right">
+                                        <SendMessageDialog client={client} useGroupWebhook={true} trigger={
+                                            <Button variant="outline" size="sm">
+                                                <MessageSquare className="mr-2 h-4 w-4" />
+                                                Enviar Mensagem
+                                            </Button>
+                                        } />
+                                    </TableCell>
+                                </TableRow>
+                            ))) : (
+                                <TableRow>
+                                    <TableCell colSpan={3} className="h-24 text-center">
+                                        Nenhum cliente encontrado.
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
+                </ScrollArea>
             </div>
         </div>
     );
