@@ -458,7 +458,7 @@ const AppDashboard = () => {
             case '/automacao/remarketing':
                 return <RemarketingPage config={automationSettings} />;
             case '/automacao/grupos':
-                return <GroupsPage clients={transformedClients} />;
+                return <GroupsPage />;
             case '/configuracoes':
                 return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} />;
             default:
@@ -2365,35 +2365,41 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
 };
   
 
-const SendMessageDialog = ({ client, trigger, useGroupWebhook }: { client: Client; trigger: React.ReactNode; useGroupWebhook?: boolean; }) => {
+const SendMessageDialog = ({ client, trigger, useGroupWebhook }: { client?: Client; trigger: React.ReactNode; useGroupWebhook?: boolean; }) => {
     const [isMessageDialogOpen, setIsMessageDialogOpen] = useState(false);
     const [message, setMessage] = useState('');
+    const [groupJid, setGroupJid] = useState('');
     const [isPending, startTransition] = useTransition();
     const { toast } = useToast();
   
     const handleSendMessage = () => {
+        const phone = useGroupWebhook ? groupJid : client?.phone;
+        const name = useGroupWebhook ? 'Grupo' : client?.name;
+
+        if (!phone) {
+            toast({ variant: 'destructive', title: 'Erro', description: 'Número do destinatário ou JID do grupo não encontrado.' });
+            return;
+        }
+
         if (!message) {
-            toast({
-                variant: 'destructive',
-                title: 'Erro',
-                description: 'A mensagem não pode estar em branco.',
-            });
+            toast({ variant: 'destructive', title: 'Erro', description: 'A mensagem não pode estar em branco.' });
             return;
         }
 
       startTransition(async () => {
         try {
           const sendMessageFn = useGroupWebhook ? sendGroupMessage : sendMessage;
-          const result = await sendMessageFn(client.phone, message);
+          const result = await sendMessageFn(phone, message);
 
           if (result.error) {
             throw new Error(result.error);
           }
           toast({
             title: 'Sucesso!',
-            description: `Mensagem enviada para ${client.name}.`,
+            description: `Mensagem enviada para ${name}.`,
           });
           setMessage('');
+          setGroupJid('');
           setIsMessageDialogOpen(false);
         } catch (error) {
           console.error("Error sending message:", error);
@@ -2413,22 +2419,35 @@ const SendMessageDialog = ({ client, trigger, useGroupWebhook }: { client: Clien
         </DialogTrigger>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Enviar Mensagem para {client.name}</DialogTitle>
+            <DialogTitle>Enviar Mensagem para {useGroupWebhook ? 'Grupo' : client?.name}</DialogTitle>
             <DialogDescription>
-              Digite a mensagem que você deseja enviar para o número {client.phone}.
+              {useGroupWebhook 
+                ? 'Insira o JID do grupo e a mensagem a ser enviada.' 
+                : `Digite a mensagem que você deseja enviar para o número ${client?.phone}.`}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <Label htmlFor="message" className="sr-only">
-              Mensagem
-            </Label>
-            <Textarea 
-              id="message" 
-              placeholder="Digite sua mensagem aqui..." 
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              className="min-h-[120px]"
-            />
+            {useGroupWebhook && (
+                <div className="grid gap-2">
+                    <Label htmlFor="group-jid">JID do Grupo</Label>
+                    <Input 
+                        id="group-jid" 
+                        placeholder="Cole o JID do grupo aqui..." 
+                        value={groupJid}
+                        onChange={(e) => setGroupJid(e.target.value)}
+                    />
+                </div>
+            )}
+            <div className="grid gap-2">
+                <Label htmlFor="message">Mensagem</Label>
+                <Textarea 
+                id="message" 
+                placeholder="Digite sua mensagem aqui..." 
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                className="min-h-[120px]"
+                />
+            </div>
           </div>
           <DialogFooter>
             <DialogClose asChild>
@@ -2438,7 +2457,7 @@ const SendMessageDialog = ({ client, trigger, useGroupWebhook }: { client: Clien
             </DialogClose>
             <Button onClick={handleSendMessage} disabled={isPending}>
                 {isPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
-              Enviar Mensagem
+              Enviar Mensagem Agora
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2993,7 +3012,7 @@ const NotesPage = ({ notes }: { notes: Note[] }) => {
     );
 }
 
-const GroupsPage = ({ clients }: { clients: Client[] }) => {
+const GroupsPage = () => {
     const [groupCode, setGroupCode] = useState('');
     const [isPending, startTransition] = useTransition();
     const { toast } = useToast();
@@ -3106,171 +3125,47 @@ const GroupsPage = ({ clients }: { clients: Client[] }) => {
                 </TabsContent>
 
                 <TabsContent value="send-messages">
-                    <GroupMessageSender clients={clients} />
+                    <GroupMessageSender />
                 </TabsContent>
             </Tabs>
         </div>
     );
 };
 
-const GroupMessageSender = ({ clients }: { clients: Client[] }) => {
-    const [sortConfig, setSortConfig] = useState<{ key: SortableClientKeys; direction: 'ascending' | 'descending' } | null>({ key: 'name', direction: 'ascending' });
-    const [searchTerm, setSearchTerm] = useState('');
-    const [inputValue, setInputValue] = useState('');
-
-    const handleSearch = () => {
-        setSearchTerm(inputValue);
-    };
-
-    const handleClearSearch = () => {
-        setInputValue('');
-        setSearchTerm('');
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === 'Enter') {
-            handleSearch();
-        }
-    };
-
-    const filteredClients = useMemo(() => {
-        if (!searchTerm) return clients;
-        const lowercasedFilter = searchTerm.toLowerCase();
-        return clients.filter(client => 
-            client.name.toLowerCase().includes(lowercasedFilter) ||
-            client.emails.some(email => email.toLowerCase().includes(lowercasedFilter)) ||
-            client.status.toLowerCase().includes(lowercasedFilter) ||
-            client.subscription.toLowerCase().includes(lowercasedFilter)
-        );
-    }, [clients, searchTerm]);
-
-    const sortedClients = useMemo(() => {
-        let sortableClients = [...filteredClients];
-        if (sortConfig !== null) {
-            sortableClients.sort((a, b) => {
-                const aValue = a[sortConfig.key];
-                const bValue = b[sortConfig.key];
-
-                if (aValue === null || aValue === undefined) return 1;
-                if (bValue === null || bValue === undefined) return -1;
-                
-                let comparison = 0;
-                if(sortConfig.key === 'emails') {
-                    comparison = (aValue[0] || '').localeCompare(bValue[0] || '');
-                } else if (aValue instanceof Date && bValue instanceof Date) {
-                    comparison = aValue.getTime() - bValue.getTime();
-                } else if (typeof aValue === 'string' && typeof bValue === 'string') {
-                    comparison = aValue.localeCompare(bValue);
-                } else {
-                    if (aValue < bValue) {
-                        comparison = -1;
-                    }
-                    if (aValue > bValue) {
-                        comparison = 1;
-                    }
-                }
-
-                return sortConfig.direction === 'ascending' ? comparison : -comparison;
-            });
-        }
-        return sortableClients;
-    }, [filteredClients, sortConfig]);
-
-    const requestSort = (key: SortableClientKeys) => {
-        let direction: 'ascending' | 'descending' = 'ascending';
-        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
-            direction = 'descending';
-        }
-        setSortConfig({ key, direction });
-    };
-
-    const getSortIndicator = (key: SortableClientKeys) => {
-        if (!sortConfig || sortConfig.key !== key) {
-            return <ArrowUpDown className="ml-2 h-4 w-4 text-muted-foreground/50" />;
-        }
-        return sortConfig.direction === 'ascending' ? <ChevronUp className="ml-2 h-4 w-4" /> : <ChevronDown className="ml-2 h-4 w-4" />;
-    };
-
+const GroupMessageSender = () => {
     return (
-        <div className="w-full flex flex-col h-full pt-6">
-            <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
-                <div className='flex-shrink-0 text-center sm:text-left'>
-                    <h3 className="text-lg font-bold">Disparo para Clientes</h3>
-                    <p className="text-sm text-muted-foreground">Selecione um cliente para enviar uma mensagem via o webhook de grupo.</p>
-                </div>
-                <div className='w-full sm:w-auto flex-grow max-w-sm relative'>
-                    <Input 
-                        placeholder="Pesquisar cliente..."
-                        value={inputValue}
-                        onChange={(e) => setInputValue(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        className="w-full pr-10"
+        <div className="w-full flex flex-col h-full pt-6 max-w-lg mx-auto">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Enviar Mensagem para Grupo</CardTitle>
+                    <CardDescription>
+                        Envie uma mensagem imediata para um JID de grupo. O agendamento não é suportado.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <SendMessageDialog 
+                        useGroupWebhook={true} 
+                        trigger={
+                            <Button className='w-full'>
+                                <MessageSquare className="mr-2 h-4 w-4" />
+                                Escrever e Enviar Mensagem
+                            </Button>
+                        } 
                     />
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8"
-                        onClick={searchTerm ? handleClearSearch : handleSearch}
-                    >
-                        {searchTerm ? <XIcon className="h-4 w-4" /> : <Search className="h-4 w-4" />}
-                        <span className="sr-only">{searchTerm ? 'Limpar pesquisa' : 'Pesquisar'}</span>
-                    </Button>
-                </div>
-            </div>
-            <div className="flex-grow border rounded-lg overflow-x-auto">
-                <ScrollArea className="h-full max-h-[60vh]">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead onClick={() => requestSort('name')} className="cursor-pointer">
-                                    <div className="flex items-center">
-                                        Nome {getSortIndicator('name')}
-                                    </div>
-                                </TableHead>
-                                <TableHead className="hidden md:table-cell">Telefone</TableHead>
-                                <TableHead className="text-right">Ações</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {sortedClients.length > 0 ? (
-                                sortedClients.map((client) => (
-                                <TableRow key={client.id}>
-                                    <TableCell className="font-medium">
-                                        <div className="flex items-center gap-2">
-                                            {client.isResale ? (
-                                                <Users className="h-5 w-5 text-red-500 flex-shrink-0" />
-                                            ) : (
-                                                <User className="h-5 w-5 text-yellow-400 flex-shrink-0" />
-                                            )}
-                                            <span className="truncate">{client.name}</span>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="hidden md:table-cell">{client.phone}</TableCell>
-                                    <TableCell className="text-right">
-                                        <SendMessageDialog client={client} useGroupWebhook={true} trigger={
-                                            <Button variant="outline" size="sm">
-                                                <MessageSquare className="mr-2 h-4 w-4" />
-                                                Enviar Mensagem
-                                            </Button>
-                                        } />
-                                    </TableCell>
-                                </TableRow>
-                            ))) : (
-                                <TableRow>
-                                    <TableCell colSpan={3} className="h-24 text-center">
-                                        Nenhum cliente encontrado.
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </ScrollArea>
-            </div>
+                </CardContent>
+                <CardFooter>
+                    <p className="text-xs text-muted-foreground">
+                        Clique no botão acima para abrir a caixa de diálogo de envio de mensagem.
+                    </p>
+                </CardFooter>
+            </Card>
         </div>
     );
 };
 
 
 export default AppDashboard;
+
+    
 
     
