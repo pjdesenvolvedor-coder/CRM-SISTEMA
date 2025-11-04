@@ -26,6 +26,14 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -34,6 +42,7 @@ export default function LoginPage() {
   const [isResetLoading, setIsResetLoading] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
+  const [showSpamAlert, setShowSpamAlert] = useState(false);
   const { toast } = useToast();
   const auth = getAuth();
 
@@ -73,11 +82,8 @@ export default function LoginPage() {
     setIsResetLoading(true);
     try {
         await sendPasswordResetEmail(auth, resetEmail);
-        toast({
-            title: 'Link Enviado!',
-            description: 'Se uma conta existir para este e-mail, um link para redefinir a senha foi enviado.',
-        });
         setIsResetDialogOpen(false);
+        setShowSpamAlert(true);
         setResetEmail('');
     } catch (error: any) {
         console.error(error);
@@ -194,6 +200,20 @@ export default function LoginPage() {
             </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={showSpamAlert} onOpenChange={setShowSpamAlert}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Verifique seu E-mail</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se uma conta existir para o e-mail informado, um link de redefinição de senha foi enviado.
+              <br /><br />
+              <strong className='text-destructive'>Importante:</strong> Se não encontrar o e-mail na sua caixa de entrada, verifique sua pasta de <strong>Spam</strong> ou <strong>Lixo Eletrônico</strong>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogAction onClick={() => setShowSpamAlert(false)}>OK</AlertDialogAction>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
