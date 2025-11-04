@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -511,7 +511,7 @@ const AppDashboard = () => {
             case '/':
                 return <DashboardPage clients={transformedClients} rawClients={clients ?? []} />;
             case '/clientes':
-                return <ClientsPage clients={transformedClients} subscriptions={subscriptions ?? []} onToggleSupport={handleToggleSupport} />;
+                return <ClientsPage clients={transformedClients} rawClients={clients ?? []} subscriptions={subscriptions ?? []} onToggleSupport={handleToggleSupport} />;
             case '/clientes/suporte':
                 return <SupportPage clients={transformedClients} onToggleSupport={handleToggleSupport} setSupportClient={setSupportClient} />;
             case '/notas':
@@ -907,7 +907,7 @@ const DashboardPage = ({ clients, rawClients }: { clients: Client[], rawClients:
 
 type SortableClientKeys = 'name' | 'status' | 'dueDate' | 'subscription' | 'emails';
 
-const ClientsPage = ({ clients, subscriptions, onToggleSupport }: { clients: Client[], subscriptions: Subscription[], onToggleSupport: (client: Client) => void }) => {
+const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport }: { clients: Client[], rawClients: Client[], subscriptions: Subscription[], onToggleSupport: (client: Client) => void }) => {
     const [editingClient, setEditingClient] = useState<Client | null>(null);
     const [isAddClientDialogOpen, setIsAddClientDialogOpen] = useState(false);
     const [sortConfig, setSortConfig] = useState<{ key: SortableClientKeys; direction: 'ascending' | 'descending' } | null>({ key: 'name', direction: 'ascending' });
@@ -916,6 +916,8 @@ const ClientsPage = ({ clients, subscriptions, onToggleSupport }: { clients: Cli
     const firestore = useFirestore();
     const { user } = useSecurity();
     const userId = user?.uid ?? 'psozJegDEETMk9DuHrSfINHKwR2';
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const { toast } = useToast();
 
     const handleSearch = () => {
         setSearchTerm(inputValue);
@@ -930,6 +932,109 @@ const ClientsPage = ({ clients, subscriptions, onToggleSupport }: { clients: Cli
         if (e.key === 'Enter') {
             handleSearch();
         }
+    };
+
+    const handleExportClients = () => {
+        if (!rawClients || rawClients.length === 0) {
+            toast({
+                variant: 'destructive',
+                title: 'Nenhum cliente para exportar',
+                description: 'Não há clientes na lista para serem exportados.',
+            });
+            return;
+        }
+
+        const dataToExport = rawClients.map(client => {
+            const { id, status, ...rest } = client; // Exclude id and derived status
+            return {
+                ...rest,
+                // Convert Timestamps to ISO strings for JSON compatibility
+                dueDate: client.dueDate ? (client.dueDate instanceof Timestamp ? client.dueDate.toDate().toISOString() : new Date(client.dueDate).toISOString()) : null,
+                createdAt: client.createdAt ? (client.createdAt instanceof Timestamp ? client.createdAt.toDate().toISOString() : new Date(client.createdAt).toISOString()) : null,
+                lastNotificationSent: client.lastNotificationSent ? (client.lastNotificationSent instanceof Timestamp ? client.lastNotificationSent.toDate().toISOString() : new Date(client.lastNotificationSent).toISOString()) : null,
+                lastReminderSent: client.lastReminderSent ? (client.lastReminderSent instanceof Timestamp ? client.lastReminderSent.toDate().toISOString() : new Date(client.lastReminderSent).toISOString()) : null,
+                lastRemarketingPostDueDateSent: client.lastRemarketingPostDueDateSent ? (client.lastRemarketingPostDueDateSent instanceof Timestamp ? client.lastRemarketingPostDueDateSent.toDate().toISOString() : new Date(client.lastRemarketingPostDueDateSent).toISOString()) : null,
+                lastRemarketingPostRegistrationSent: client.lastRemarketingPostRegistrationSent ? (client.lastRemarketingPostRegistrationSent instanceof Timestamp ? client.lastRemarketingPostRegistrationSent.toDate().toISOString() : new Date(client.lastRemarketingPostRegistrationSent).toISOString()) : null,
+            };
+        });
+
+        const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(
+            JSON.stringify(dataToExport, null, 2)
+        )}`;
+        const link = document.createElement('a');
+        link.href = jsonString;
+        link.download = `clientes-backup-${new Date().toISOString().split('T')[0]}.json`;
+        link.click();
+
+        toast({
+            title: 'Exportação Concluída',
+            description: `${rawClients.length} clientes foram exportados com sucesso.`,
+        });
+    };
+
+    const handleImportClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleImportClients = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file || !firestore) {
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const content = e.target?.result;
+                if (typeof content !== 'string') {
+                    throw new Error('Conteúdo do arquivo inválido.');
+                }
+                const importedClients = JSON.parse(content);
+                
+                if (!Array.isArray(importedClients)) {
+                    throw new Error('O arquivo JSON deve conter um array de clientes.');
+                }
+                
+                const batch = writeBatch(firestore);
+                const clientsCol = collection(firestore, 'users', userId, 'clients');
+
+                importedClients.forEach(clientData => {
+                    const newDocRef = doc(clientsCol); // Create a new document reference with a unique ID
+                    
+                    // Convert date strings back to Firestore Timestamps
+                    const dataToSave = {
+                        ...clientData,
+                        dueDate: clientData.dueDate ? Timestamp.fromDate(new Date(clientData.dueDate)) : null,
+                        createdAt: clientData.createdAt ? Timestamp.fromDate(new Date(clientData.createdAt)) : Timestamp.now(),
+                        lastNotificationSent: clientData.lastNotificationSent ? Timestamp.fromDate(new Date(clientData.lastNotificationSent)) : null,
+                        lastReminderSent: clientData.lastReminderSent ? Timestamp.fromDate(new Date(clientData.lastReminderSent)) : null,
+                        lastRemarketingPostDueDateSent: clientData.lastRemarketingPostDueDateSent ? Timestamp.fromDate(new Date(clientData.lastRemarketingPostDueDateSent)) : null,
+                        lastRemarketingPostRegistrationSent: clientData.lastRemarketingPostRegistrationSent ? Timestamp.fromDate(new Date(clientData.lastRemarketingPostRegistrationSent)) : null,
+                    };
+                    batch.set(newDocRef, dataToSave);
+                });
+
+                await batch.commit();
+
+                toast({
+                    title: 'Importação Concluída!',
+                    description: `${importedClients.length} clientes foram importados com sucesso.`,
+                });
+            } catch (error) {
+                console.error("Error importing clients:", error);
+                toast({
+                    variant: 'destructive',
+                    title: 'Erro na Importação',
+                    description: error instanceof Error ? error.message : 'Não foi possível importar os clientes. Verifique o formato do arquivo.',
+                });
+            } finally {
+                // Reset file input to allow re-importing the same file
+                if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                }
+            }
+        };
+        reader.readAsText(file);
     };
 
     const filteredClients = useMemo(() => {
@@ -1061,17 +1166,43 @@ const ClientsPage = ({ clients, subscriptions, onToggleSupport }: { clients: Cli
                     <span className="sr-only">{searchTerm ? 'Limpar pesquisa' : 'Pesquisar'}</span>
                 </Button>
             </div>
-            <AddEditClientDialog 
-                isOpen={isAddClientDialogOpen} 
-                onOpenChange={setIsAddClientDialogOpen}
-                onSave={handleAddClient} 
-                subscriptions={subscriptions}
-                trigger={
-                    <Button onClick={() => setIsAddClientDialogOpen(true)} className="w-full sm:w-auto flex-shrink-0">
-                        <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Cliente
-                    </Button>
-                }
-            />
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+                 <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleImportClients}
+                    accept=".json"
+                    className="hidden"
+                />
+                 <AddEditClientDialog 
+                    isOpen={isAddClientDialogOpen} 
+                    onOpenChange={setIsAddClientDialogOpen}
+                    onSave={handleAddClient} 
+                    subscriptions={subscriptions}
+                    trigger={
+                        <Button onClick={() => setIsAddClientDialogOpen(true)} className="w-full sm:w-auto flex-shrink-0">
+                            <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Cliente
+                        </Button>
+                    }
+                />
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="icon">
+                            <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={handleImportClick}>
+                            <Upload className="mr-2 h-4 w-4" />
+                            Importar Clientes
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={handleExportClients}>
+                            <Download className="mr-2 h-4 w-4" />
+                            Exportar Clientes
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
           </div>
         </div>
         <div className="flex-grow border rounded-lg overflow-x-auto">
@@ -3460,3 +3591,5 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
 }
 
 export default AppDashboard;
+
+    
