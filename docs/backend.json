@@ -100,29 +100,29 @@
     "providers": ["anonymous"]
   },
   "firestore": {
-    "/clients/{clientId}": {
+    "/users/{userId}/clients/{clientId}": {
       "schema": { "$ref": "#/entities/Client" },
-      "description": "Stores all client data."
+      "description": "Stores all client data for a specific user."
     },
-    "/subscriptions/{subscriptionId}": {
+    "/users/{userId}/subscriptions/{subscriptionId}": {
       "schema": { "$ref": "#/entities/Subscription" },
-      "description": "Stores all subscription plans."
+      "description": "Stores all subscription plans for a specific user."
     },
-    "/whatsapp_connection/{connectionId}": {
+    "/users/{userId}/whatsapp_connection/{connectionId}": {
         "schema": { "$ref": "#/entities/WhatsAppConnection" },
-        "description": "Stores WhatsApp connection data."
+        "description": "Stores WhatsApp connection data for a specific user."
     },
-    "/automation/{automationId}": {
+    "/users/{userId}/automation/{automationId}": {
         "schema": { "$ref": "#/entities/AutomationConfig" },
-        "description": "Stores automation settings."
+        "description": "Stores automation settings for a specific user."
     },
-    "/notes/{noteId}": {
+    "/users/{userId}/notes/{noteId}": {
         "schema": { "$ref": "#/entities/Note" },
-        "description": "Stores all notes."
+        "description": "Stores all notes for a specific user."
     },
-    "/scheduledGroupMessages/{messageId}": {
+    "/users/{userId}/scheduledGroupMessages/{messageId}": {
       "schema": { "$ref": "#/entities/ScheduledGroupMessage" },
-      "description": "Stores all scheduled group messages."
+      "description": "Stores all scheduled group messages for a specific user."
     }
   }
 }
