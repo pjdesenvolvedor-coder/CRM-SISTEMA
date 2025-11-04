@@ -133,6 +133,7 @@ type ScheduledGroupMessage = {
     message: string;
     sendAt: Timestamp;
     status: 'pending' | 'sent';
+    isRecurring: boolean;
 };
 
 const getInitialState = (): { status: ConnectionStatus, profileName: string | null, profilePic: string | null } => {
@@ -457,9 +458,8 @@ const AppDashboard = () => {
         if (!scheduledMessages || !firestore) {
             return;
         }
-
+    
         const checkInterval = setInterval(() => {
-            const now = new Date();
             const pendingMessages = scheduledMessages.filter(m => m.status === 'pending');
             
             pendingMessages.forEach(msg => {
@@ -470,12 +470,25 @@ const AppDashboard = () => {
                             if (result.error) {
                                 throw new Error(result.error);
                             }
+    
                             const msgDoc = doc(firestore, 'users', userId, 'scheduledGroupMessages', msg.id);
-                            updateDoc(msgDoc, { status: 'sent' });
-                            toast({
-                                title: 'Mensagem de Grupo Enviada',
-                                description: `Mensagem agendada enviada para o grupo ${msg.groupId}.`,
-                            });
+    
+                            if (msg.isRecurring) {
+                                // Re-schedule for the next day
+                                const nextSendAt = addDays(sendAt, 1);
+                                updateDoc(msgDoc, { sendAt: Timestamp.fromDate(nextSendAt), status: 'pending' });
+                                toast({
+                                    title: 'Mensagem Recorrente Enviada',
+                                    description: `Mensagem enviada para o grupo ${msg.groupId} e reagendada para amanhã.`,
+                                });
+                            } else {
+                                // Mark as sent
+                                updateDoc(msgDoc, { status: 'sent' });
+                                toast({
+                                    title: 'Mensagem de Grupo Enviada',
+                                    description: `Mensagem agendada enviada para o grupo ${msg.groupId}.`,
+                                });
+                            }
                         })
                         .catch(error => {
                             toast({
@@ -486,9 +499,9 @@ const AppDashboard = () => {
                         });
                 }
             });
-
+    
         }, 10000); // Check every 10 seconds
-
+    
         return () => clearInterval(checkInterval);
     }, [scheduledMessages, firestore, toast, userId]);
 
@@ -3267,9 +3280,12 @@ const GroupMessageScheduler = ({ scheduledMessages }: { scheduledMessages: Sched
                             {scheduledMessages.length > 0 ? scheduledMessages.map(msg => (
                                 <TableRow key={msg.id}>
                                     <TableCell>
-                                        <Badge variant={msg.status === 'sent' ? 'default' : 'secondary'}>
-                                            {msg.status === 'sent' ? 'Enviado' : 'Pendente'}
-                                        </Badge>
+                                        <div className='flex items-center gap-2'>
+                                            <Badge variant={msg.status === 'sent' ? 'default' : 'secondary'}>
+                                                {msg.status === 'sent' ? 'Enviado' : 'Pendente'}
+                                            </Badge>
+                                            {msg.isRecurring && <Repeat className='h-4 w-4 text-muted-foreground' title='Mensagem recorrente' />}
+                                        </div>
                                     </TableCell>
                                     <TableCell className="font-mono text-xs max-w-[150px] truncate">{msg.groupId}</TableCell>
                                     <TableCell className="max-w-[200px] truncate">{msg.message}</TableCell>
@@ -3282,7 +3298,7 @@ const GroupMessageScheduler = ({ scheduledMessages }: { scheduledMessages: Sched
                                                 </Button>
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent>
-                                                <DropdownMenuItem onClick={() => openEditDialog(msg)} disabled={msg.status === 'sent'}>
+                                                <DropdownMenuItem onClick={() => openEditDialog(msg)} disabled={msg.status === 'sent' && !msg.isRecurring}>
                                                     <Edit className="mr-2 h-4 w-4" /> Editar
                                                 </DropdownMenuItem>
                                                 <AlertDialog>
@@ -3324,6 +3340,7 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
     const [message, setMessage] = useState('');
     const [sendDate, setSendDate] = useState<Date | undefined>(new Date());
     const [sendTime, setSendTime] = useState({ hour: '12', minute: '00' });
+    const [isRecurring, setIsRecurring] = useState(false);
     
     useEffect(() => {
         if (isOpen) {
@@ -3336,6 +3353,7 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
                     hour: getHours(date).toString().padStart(2, '0'),
                     minute: getMinutes(date).toString().padStart(2, '0')
                 });
+                setIsRecurring(messageToEdit.isRecurring);
             } else {
                 // Reset for new message
                 setGroupId('');
@@ -3346,6 +3364,7 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
                     hour: getHours(now).toString().padStart(2, '0'),
                     minute: getMinutes(now).toString().padStart(2, '0')
                 });
+                setIsRecurring(false);
             }
         }
     }, [isOpen, messageToEdit]);
@@ -3361,7 +3380,8 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
         onSave({
             groupId,
             message,
-            sendAt: Timestamp.fromDate(finalDate)
+            sendAt: Timestamp.fromDate(finalDate),
+            isRecurring,
         });
     };
 
@@ -3413,6 +3433,19 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
                                 placeholder="MM"
                             />
                         </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <Checkbox 
+                            id="recurring-check"
+                            checked={isRecurring}
+                            onCheckedChange={setIsRecurring as (checked: boolean | 'indeterminate') => void}
+                        />
+                        <label
+                            htmlFor="recurring-check"
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        >
+                            Repetir diariamente
+                        </label>
                     </div>
                 </div>
                 <DialogFooter>
