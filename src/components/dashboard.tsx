@@ -127,6 +127,14 @@ type Note = {
     createdAt: Timestamp;
 }
 
+type ScheduledGroupMessage = {
+    id: string;
+    groupId: string;
+    message: string;
+    sendAt: Timestamp;
+    status: 'pending' | 'sent';
+};
+
 const getInitialState = (): { status: ConnectionStatus, profileName: string | null, profilePic: string | null } => {
     if (typeof window === 'undefined') {
         return { status: 'loading', profileName: null, profilePic: null };
@@ -173,9 +181,9 @@ const getClientStatus = (dueDate: Date | Timestamp | null): ClientStatus => {
 const AppDashboard = () => {
     const pathname = usePathname();
     const firestore = useFirestore();
-    const { logout } = useSecurity();
+    const { logout, user } = useSecurity();
 
-    const hardcodedUserId = 'psozJegDEETMk9DuHrSfINHKwR2';
+    const userId = user?.uid ?? 'psozJegDEETMk9DuHrSfINHKwR2';
 
     const initialState = getInitialState();
     const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(initialState.status);
@@ -267,18 +275,21 @@ const AppDashboard = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
       }, []); // Run only once on mount
 
-    const subscriptionsQuery = useMemoFirebase(() => firestore ? collection(firestore, 'users', hardcodedUserId, 'subscriptions') : null, [firestore, hardcodedUserId]);
+    const subscriptionsQuery = useMemoFirebase(() => firestore ? collection(firestore, 'users', userId, 'subscriptions') : null, [firestore, userId]);
     const { data: subscriptions, isLoading: subscriptionsLoading } = useCollection<Subscription>(subscriptionsQuery);
 
-    const clientsQuery = useMemoFirebase(() => firestore ? collection(firestore, 'users', hardcodedUserId, 'clients') : null, [firestore, hardcodedUserId]);
+    const clientsQuery = useMemoFirebase(() => firestore ? collection(firestore, 'users', userId, 'clients') : null, [firestore, userId]);
     const { data: clients, isLoading: clientsLoading } = useCollection<Client>(clientsQuery);
     
-    const automationConfigQuery = useMemoFirebase(() => firestore ? collection(firestore, 'users', hardcodedUserId, 'automation') : null, [firestore, hardcodedUserId]);
+    const automationConfigQuery = useMemoFirebase(() => firestore ? collection(firestore, 'users', userId, 'automation') : null, [firestore, userId]);
     const { data: automationConfig, isLoading: automationLoading } = useCollection<AutomationConfig>(automationConfigQuery);
     const automationSettings = useMemo(() => automationConfig?.[0], [automationConfig]);
 
-    const notesQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'users', hardcodedUserId, 'notes'), orderBy('createdAt', 'desc')) : null, [firestore, hardcodedUserId]);
+    const notesQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'users', userId, 'notes'), orderBy('createdAt', 'desc')) : null, [firestore, userId]);
     const { data: notes, isLoading: notesLoading } = useCollection<Note>(notesQuery);
+
+    const scheduledMessagesQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'users', userId, 'scheduledGroupMessages'), orderBy('sendAt', 'desc')) : null, [firestore, userId]);
+    const { data: scheduledMessages, isLoading: scheduledMessagesLoading } = useCollection<ScheduledGroupMessage>(scheduledMessagesQuery);
 
     const [supportClient, setSupportClient] = useState<Client | null>(null);
 
@@ -320,7 +331,7 @@ const AppDashboard = () => {
                     throw new Error(result.error);
                 }
                 
-                const clientDoc = doc(firestore, 'users', hardcodedUserId, 'clients', client.id);
+                const clientDoc = doc(firestore, 'users', userId, 'clients', client.id);
                 let updateData = {};
                 let toastTitle = '';
                 let toastDescription = '';
@@ -363,7 +374,7 @@ const AppDashboard = () => {
                     description: `Não foi possível enviar a mensagem para ${client.name}: ${error.message}`,
                 });
             });
-    }, [firestore, toast, formatMessage, hardcodedUserId]);
+    }, [firestore, toast, formatMessage, userId]);
 
 
     useEffect(() => {
@@ -430,17 +441,56 @@ const AppDashboard = () => {
         if (client.isResale) {
             setSupportClient(client);
         } else {
-            const clientDoc = doc(firestore, 'users', hardcodedUserId, 'clients', client.id);
+            const clientDoc = doc(firestore, 'users', userId, 'clients', client.id);
             updateDoc(clientDoc, { isSupport: !client.isSupport, supportEmails: [] });
         }
-    }, [firestore, hardcodedUserId]);
+    }, [firestore, userId]);
     
     const handleSaveSupportEmails = useMemo(() => (clientId: string, supportEmails: string[]) => {
         if (!firestore) return;
-        const clientDoc = doc(firestore, 'users', hardcodedUserId, 'clients', clientId);
+        const clientDoc = doc(firestore, 'users', userId, 'clients', clientId);
         updateDoc(clientDoc, { supportEmails: supportEmails, isSupport: supportEmails.length > 0 });
         setSupportClient(null);
-    }, [firestore, hardcodedUserId]);
+    }, [firestore, userId]);
+
+    useEffect(() => {
+        if (!scheduledMessages || !firestore) {
+            return;
+        }
+
+        const checkInterval = setInterval(() => {
+            const now = new Date();
+            const pendingMessages = scheduledMessages.filter(m => m.status === 'pending');
+            
+            pendingMessages.forEach(msg => {
+                const sendAt = msg.sendAt.toDate();
+                if (isPast(sendAt)) {
+                    sendGroupMessage(msg.groupId, msg.message)
+                        .then(result => {
+                            if (result.error) {
+                                throw new Error(result.error);
+                            }
+                            const msgDoc = doc(firestore, 'users', userId, 'scheduledGroupMessages', msg.id);
+                            updateDoc(msgDoc, { status: 'sent' });
+                            toast({
+                                title: 'Mensagem de Grupo Enviada',
+                                description: `Mensagem agendada enviada para o grupo ${msg.groupId}.`,
+                            });
+                        })
+                        .catch(error => {
+                            toast({
+                                variant: "destructive",
+                                title: 'Falha no Envio Agendado',
+                                description: `Não foi possível enviar a mensagem para o grupo ${msg.groupId}: ${error.message}`,
+                            });
+                        });
+                }
+            });
+
+        }, 10000); // Check every 10 seconds
+
+        return () => clearInterval(checkInterval);
+    }, [scheduledMessages, firestore, toast, userId]);
 
 
     const renderPage = () => {
@@ -458,7 +508,7 @@ const AppDashboard = () => {
             case '/automacao/remarketing':
                 return <RemarketingPage config={automationSettings} />;
             case '/automacao/grupos':
-                return <GroupsPage />;
+                return <GroupsPage scheduledMessages={scheduledMessages ?? []} />;
             case '/configuracoes':
                 return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} />;
             default:
@@ -466,7 +516,7 @@ const AppDashboard = () => {
         }
     };
     
-    const isLoading = subscriptionsLoading || clientsLoading || automationLoading || notesLoading;
+    const isLoading = subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading;
 
     if (isLoading && !isTransitioningPage) {
         return (
@@ -851,7 +901,8 @@ const ClientsPage = ({ clients, subscriptions, onToggleSupport }: { clients: Cli
     const [searchTerm, setSearchTerm] = useState('Ativo');
     const [inputValue, setInputValue] = useState('Ativo');
     const firestore = useFirestore();
-    const hardcodedUserId = 'psozJegDEETMk9DuHrSfINHKwR2';
+    const { user } = useSecurity();
+    const userId = user?.uid ?? 'psozJegDEETMk9DuHrSfINHKwR2';
 
     const handleSearch = () => {
         setSearchTerm(inputValue);
@@ -940,14 +991,14 @@ const ClientsPage = ({ clients, subscriptions, onToggleSupport }: { clients: Cli
             dueDate: client.dueDate ? (client.dueDate instanceof Timestamp ? client.dueDate : Timestamp.fromDate(new Date(client.dueDate))) : null,
             createdAt: now,
         };
-        const clientsCol = collection(firestore, 'users', hardcodedUserId, 'clients');
+        const clientsCol = collection(firestore, 'users', userId, 'clients');
         addDoc(clientsCol, clientData);
     };
     
     const handleUpdateClient = (updatedClient: Client) => {
         if (!firestore) return;
         const { id, status, ...clientData } = updatedClient; // remove derived status before saving
-        const clientDoc = doc(firestore, 'users', hardcodedUserId, 'clients', id);
+        const clientDoc = doc(firestore, 'users', userId, 'clients', id);
         
         const dataToUpdate = {
             ...clientData,
@@ -961,7 +1012,7 @@ const ClientsPage = ({ clients, subscriptions, onToggleSupport }: { clients: Cli
 
     const handleDeleteClient = (clientId: string) => {
         if(!firestore) return;
-        const clientDoc = doc(firestore, 'users', hardcodedUserId, 'clients', clientId);
+        const clientDoc = doc(firestore, 'users', userId, 'clients', clientId);
         deleteDoc(clientDoc);
     };
 
@@ -1554,7 +1605,8 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
     const { toast } = useToast();
     const [isPending, startTransition] = useTransition();
     const [confirmationText, setConfirmationText] = useState('');
-    const hardcodedUserId = 'psozJegDEETMk9DuHrSfINHKwR2';
+    const { user } = useSecurity();
+    const userId = user?.uid ?? 'psozJegDEETMk9DuHrSfINHKwR2';
 
     const handleAddSubscription = () => {
       if (newSubscriptionName.trim() && newSubscriptionPrice && firestore) {
@@ -1562,7 +1614,7 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
           name: newSubscriptionName.trim(),
           price: parseFloat(newSubscriptionPrice),
         };
-        const subscriptionsCol = collection(firestore, 'users', hardcodedUserId, 'subscriptions');
+        const subscriptionsCol = collection(firestore, 'users', userId, 'subscriptions');
         addDoc(subscriptionsCol, newSubscription);
         setNewSubscriptionName('');
         setNewSubscriptionPrice('');
@@ -1571,7 +1623,7 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
 
     const handleDeleteSubscription = (subscriptionId: string) => {
         if (!firestore) return;
-        const subDoc = doc(firestore, 'users', hardcodedUserId, 'subscriptions', subscriptionId);
+        const subDoc = doc(firestore, 'users', userId, 'subscriptions', subscriptionId);
         deleteDoc(subDoc);
     };
 
@@ -1583,7 +1635,7 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
 
     const handleEditSubscription = () => {
         if (editingSubscription && editedName.trim() && editedPrice && firestore) {
-            const subDoc = doc(firestore, 'users', hardcodedUserId, 'subscriptions', editingSubscription.id);
+            const subDoc = doc(firestore, 'users', userId, 'subscriptions', editingSubscription.id);
             updateDoc(subDoc, {
                 name: editedName.trim(),
                 price: parseFloat(editedPrice)
@@ -1616,7 +1668,7 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
             try {
                 const batch = writeBatch(firestore);
                 allClients.forEach(client => {
-                    const clientDocRef = doc(firestore, 'users', hardcodedUserId, 'clients', client.id);
+                    const clientDocRef = doc(firestore, 'users', userId, 'clients', client.id);
                     batch.delete(clientDocRef);
                 });
                 await batch.commit();
@@ -2205,7 +2257,8 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
     const firestore = useFirestore();
     const { toast } = useToast();
     const [isPending, startTransition] = useTransition();
-    const hardcodedUserId = 'psozJegDEETMk9DuHrSfINHKwR2';
+    const { user } = useSecurity();
+    const userId = user?.uid ?? 'psozJegDEETMk9DuHrSfINHKwR2';
 
     const [isEnabled, setIsEnabled] = useState(config?.isEnabled ?? false);
     const [message, setMessage] = useState(config?.message ?? 'Olá {cliente}! Sua assinatura venceu hoje. Para renovar, acesse nosso site.');
@@ -2236,10 +2289,10 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
         };
 
         if (config?.id) {
-          const configDoc = doc(firestore, 'users', hardcodedUserId, 'automation', config.id);
+          const configDoc = doc(firestore, 'users', userId, 'automation', config.id);
           updateDoc(configDoc, dataToSave);
         } else {
-          const automationCol = collection(firestore, 'users', hardcodedUserId, 'automation');
+          const automationCol = collection(firestore, 'users', userId, 'automation');
           addDoc(automationCol, dataToSave);
         }
   
@@ -2551,10 +2604,13 @@ const SupportPage = ({ clients, onToggleSupport, setSupportClient }: { clients: 
                     supportClients.map(client => (
                         <Card key={client.id}>
                             <CardHeader>
-                                <CardTitle className="flex items-center justify-center sm:justify-start gap-2">
-                                    {client.isResale ? <Users className="h-5 w-5 text-red-500" /> : <User className="h-5 w-5 text-yellow-400" />}
-                                    {client.name}
-                                </CardTitle>
+                                <div className="flex items-center justify-between">
+                                    <CardTitle className="flex items-center justify-center sm:justify-start gap-2">
+                                        {client.isResale ? <Users className="h-5 w-5 text-red-500" /> : <User className="h-5 w-5 text-yellow-400" />}
+                                        {client.name}
+                                    </CardTitle>
+                                    <Badge variant="outline">{client.subscription}</Badge>
+                                </div>
                                 <CardDescription className='text-center sm:text-left'>{client.phone}</CardDescription>
                             </CardHeader>
                             <CardContent>
@@ -2597,7 +2653,8 @@ const RemarketingPage = ({ config }: { config: AutomationConfig | undefined }) =
     const firestore = useFirestore();
     const { toast } = useToast();
     const [isPending, startTransition] = useTransition();
-    const hardcodedUserId = 'psozJegDEETMk9DuHrSfINHKwR2';
+    const { user } = useSecurity();
+    const userId = user?.uid ?? 'psozJegDEETMk9DuHrSfINHKwR2';
 
     const [postDueDateIsEnabled, setPostDueDateIsEnabled] = useState(config?.remarketingPostDueDateIsEnabled ?? false);
     const [postDueDateDays, setPostDueDateDays] = useState(config?.remarketingPostDueDateDays ?? 7);
@@ -2634,10 +2691,10 @@ const RemarketingPage = ({ config }: { config: AutomationConfig | undefined }) =
         };
 
         if (config?.id) {
-          const configDoc = doc(firestore, 'users', hardcodedUserId, 'automation', config.id);
+          const configDoc = doc(firestore, 'users', userId, 'automation', config.id);
           updateDoc(configDoc, dataToSave);
         } else {
-          const automationCol = collection(firestore, 'users', hardcodedUserId, 'automation');
+          const automationCol = collection(firestore, 'users', userId, 'automation');
           addDoc(automationCol, dataToSave);
         }
   
@@ -2771,7 +2828,8 @@ const NotesPage = ({ notes }: { notes: Note[] }) => {
     const [isPopoverOpen, setIsPopoverOpen] = useState(false);
     const firestore = useFirestore();
     const { toast } = useToast();
-    const hardcodedUserId = 'psozJegDEETMk9DuHrSfINHKwR2';
+    const { user } = useSecurity();
+    const userId = user?.uid ?? 'psozJegDEETMk9DuHrSfINHKwR2';
 
     const handleAddNote = () => {
         if (!firestore) {
@@ -2789,7 +2847,7 @@ const NotesPage = ({ notes }: { notes: Note[] }) => {
             createdAt: Timestamp.now(),
         };
 
-        const notesCol = collection(firestore, 'users', hardcodedUserId, 'notes');
+        const notesCol = collection(firestore, 'users', userId, 'notes');
         addDoc(notesCol, newNote);
         setNoteContent('');
         setIsPopoverOpen(false);
@@ -2798,13 +2856,13 @@ const NotesPage = ({ notes }: { notes: Note[] }) => {
 
     const handleUpdateNote = (noteId: string, updates: Partial<Note>) => {
         if (!firestore) return;
-        const noteDoc = doc(firestore, 'users', hardcodedUserId, 'notes', noteId);
+        const noteDoc = doc(firestore, 'users', userId, 'notes', noteId);
         updateDoc(noteDoc, updates);
     };
 
     const handleDeleteNote = (noteId: string) => {
         if (!firestore) return;
-        const noteDoc = doc(firestore, 'users', hardcodedUserId, 'notes', noteId);
+        const noteDoc = doc(firestore, 'users', userId, 'notes', noteId);
         deleteDoc(noteDoc);
     };
 
@@ -3012,7 +3070,32 @@ const NotesPage = ({ notes }: { notes: Note[] }) => {
     );
 }
 
-const GroupsPage = () => {
+const GroupsPage = ({ scheduledMessages }: { scheduledMessages: ScheduledGroupMessage[] }) => {
+    return (
+        <div className="w-full space-y-6">
+            <div className='text-center sm:text-left'>
+                <h2 className="text-2xl font-bold">Gerenciamento de Grupos</h2>
+                <p className="text-muted-foreground">Obtenha códigos de grupo e envie mensagens.</p>
+            </div>
+            <Tabs defaultValue="get-code" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="get-code">Obter Código do Grupo</TabsTrigger>
+                    <TabsTrigger value="send-messages">Agendar Mensagens</TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="get-code">
+                    <GroupCodeGetter />
+                </TabsContent>
+
+                <TabsContent value="send-messages">
+                    <GroupMessageScheduler scheduledMessages={scheduledMessages} />
+                </TabsContent>
+            </Tabs>
+        </div>
+    );
+};
+
+const GroupCodeGetter = () => {
     const [groupCode, setGroupCode] = useState('');
     const [isPending, startTransition] = useTransition();
     const { toast } = useToast();
@@ -3067,105 +3150,280 @@ const GroupsPage = () => {
     };
 
     return (
-        <div className="w-full space-y-6">
-            <div className='text-center sm:text-left'>
-                <h2 className="text-2xl font-bold">Gerenciamento de Grupos</h2>
-                <p className="text-muted-foreground">Obtenha códigos de grupo e envie mensagens.</p>
-            </div>
-            <Tabs defaultValue="get-code" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="get-code">Obter Código do Grupo</TabsTrigger>
-                    <TabsTrigger value="send-messages">Mensagens para Grupo</TabsTrigger>
-                </TabsList>
-                
-                <TabsContent value="get-code">
-                    <div className="grid gap-6 max-w-lg mx-auto pt-6">
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Obter código do grupo</CardTitle>
-                                <CardDescription>
-                                    Cole apenas o código do link de convite. Ex: do link https://chat.whatsapp.com/JlgDbPX9Q4g7Kij2xzlx6R, cole apenas JlgDbPX9Q4g7Kij2xzlx6R.
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="space-y-2">
-                                    <Label htmlFor="group-code">Link do grupo do zap</Label>
-                                    <Input
-                                        id="group-code"
-                                        placeholder="Insira o código do convite aqui..."
-                                        value={groupCode}
-                                        onChange={(e) => setGroupCode(e.target.value)}
-                                    />
-                                </div>
-                            </CardContent>
-                            <CardFooter>
-                                <Button onClick={handleSendToWebhook} disabled={isPending} className="w-full">
-                                    {isPending ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                                    Enviar
-                                </Button>
-                            </CardFooter>
-                        </Card>
-
-                        {groupJid && (
-                             <Card>
-                                <CardHeader>
-                                    <CardTitle>Código do Grupo Retornado</CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                   <div className="flex items-center justify-between gap-4 p-3 bg-muted rounded-md">
-                                        <span className="text-sm font-mono break-all">{groupJid}</span>
-                                        <Button variant="ghost" size="icon" onClick={handleCopyJid}>
-                                            <Copy className="h-4 w-4" />
-                                        </Button>
-                                   </div>
-                                </CardContent>
-                            </Card>
-                        )}
+        <div className="grid gap-6 max-w-lg mx-auto pt-6">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Obter código do grupo</CardTitle>
+                    <CardDescription>
+                        Cole apenas o código do link de convite. Ex: do link https://chat.whatsapp.com/JlgDbPX9Q4g7Kij2xzlx6R, cole apenas JlgDbPX9Q4g7Kij2xzlx6R.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="space-y-2">
+                        <Label htmlFor="group-code">Link do grupo do zap</Label>
+                        <Input
+                            id="group-code"
+                            placeholder="Insira o código do convite aqui..."
+                            value={groupCode}
+                            onChange={(e) => setGroupCode(e.target.value)}
+                        />
                     </div>
-                </TabsContent>
+                </CardContent>
+                <CardFooter>
+                    <Button onClick={handleSendToWebhook} disabled={isPending} className="w-full">
+                        {isPending ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                        Enviar
+                    </Button>
+                </CardFooter>
+            </Card>
 
-                <TabsContent value="send-messages">
-                    <GroupMessageSender />
-                </TabsContent>
-            </Tabs>
+            {groupJid && (
+                 <Card>
+                    <CardHeader>
+                        <CardTitle>Código do Grupo Retornado</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                       <div className="flex items-center justify-between gap-4 p-3 bg-muted rounded-md">
+                            <span className="text-sm font-mono break-all">{groupJid}</span>
+                            <Button variant="ghost" size="icon" onClick={handleCopyJid}>
+                                <Copy className="h-4 w-4" />
+                            </Button>
+                       </div>
+                    </CardContent>
+                </Card>
+            )}
         </div>
     );
 };
 
-const GroupMessageSender = () => {
+const GroupMessageScheduler = ({ scheduledMessages }: { scheduledMessages: ScheduledGroupMessage[] }) => {
+    const [isScheduling, setIsScheduling] = useState(false);
+    const [editingMessage, setEditingMessage] = useState<ScheduledGroupMessage | null>(null);
+    const firestore = useFirestore();
+    const { user } = useSecurity();
+    const userId = user?.uid ?? 'psozJegDEETMk9DuHrSfINHKwR2';
+
+    const handleSaveMessage = (messageData: Omit<ScheduledGroupMessage, 'id' | 'status'>) => {
+        if (!firestore) return;
+
+        if (editingMessage) {
+            // Update
+            const msgDoc = doc(firestore, 'users', userId, 'scheduledGroupMessages', editingMessage.id);
+            updateDoc(msgDoc, messageData);
+            setEditingMessage(null);
+        } else {
+            // Add
+            const scheduledMessagesCol = collection(firestore, 'users', userId, 'scheduledGroupMessages');
+            addDoc(scheduledMessagesCol, { ...messageData, status: 'pending' });
+        }
+        setIsScheduling(false);
+    };
+
+    const handleDeleteMessage = (messageId: string) => {
+        if (!firestore) return;
+        const msgDoc = doc(firestore, 'users', userId, 'scheduledGroupMessages', messageId);
+        deleteDoc(msgDoc);
+    };
+
+    const openEditDialog = (message: ScheduledGroupMessage) => {
+        setEditingMessage(message);
+        setIsScheduling(true);
+    };
+
     return (
-        <div className="w-full flex flex-col h-full pt-6 max-w-lg mx-auto">
+        <div className="w-full space-y-6 pt-6">
+            <div className="flex justify-center">
+                 <Button onClick={() => { setEditingMessage(null); setIsScheduling(true); }}>
+                    <PlusCircle className="mr-2 h-4 w-4" /> Agendar Nova Mensagem
+                </Button>
+            </div>
+            
+            <ScheduleGroupMessageDialog
+                isOpen={isScheduling}
+                onOpenChange={setIsScheduling}
+                onSave={handleSaveMessage}
+                messageToEdit={editingMessage}
+            />
+
             <Card>
                 <CardHeader>
-                    <CardTitle>Enviar Mensagem para Grupo</CardTitle>
+                    <CardTitle>Mensagens Agendadas</CardTitle>
                     <CardDescription>
-                        Envie uma mensagem imediata para um JID de grupo. O agendamento não é suportado.
+                        Visualize e gerencie suas mensagens de grupo agendadas.
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <SendMessageDialog 
-                        useGroupWebhook={true} 
-                        trigger={
-                            <Button className='w-full'>
-                                <MessageSquare className="mr-2 h-4 w-4" />
-                                Escrever e Enviar Mensagem
-                            </Button>
-                        } 
-                    />
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Status</TableHead>
+                                <TableHead>Grupo (JID)</TableHead>
+                                <TableHead>Mensagem</TableHead>
+                                <TableHead>Data de Envio</TableHead>
+                                <TableHead className="text-right">Ações</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {scheduledMessages.length > 0 ? scheduledMessages.map(msg => (
+                                <TableRow key={msg.id}>
+                                    <TableCell>
+                                        <Badge variant={msg.status === 'sent' ? 'default' : 'secondary'}>
+                                            {msg.status === 'sent' ? 'Enviado' : 'Pendente'}
+                                        </Badge>
+                                    </TableCell>
+                                    <TableCell className="font-mono text-xs max-w-[150px] truncate">{msg.groupId}</TableCell>
+                                    <TableCell className="max-w-[200px] truncate">{msg.message}</TableCell>
+                                    <TableCell>{format(msg.sendAt.toDate(), 'dd/MM/yyyy HH:mm')}</TableCell>
+                                    <TableCell className="text-right">
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button variant="ghost" className="h-8 w-8 p-0">
+                                                    <MoreHorizontal className="h-4 w-4" />
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent>
+                                                <DropdownMenuItem onClick={() => openEditDialog(msg)} disabled={msg.status === 'sent'}>
+                                                    <Edit className="mr-2 h-4 w-4" /> Editar
+                                                </DropdownMenuItem>
+                                                <AlertDialog>
+                                                    <AlertDialogTrigger asChild>
+                                                        <DropdownMenuItem onSelect={e => e.preventDefault()} className="text-destructive focus:text-destructive">
+                                                            <Trash className="mr-2 h-4 w-4" /> Apagar
+                                                        </DropdownMenuItem>
+                                                    </AlertDialogTrigger>
+                                                    <AlertDialogContent>
+                                                        <AlertDialogHeader>
+                                                            <AlertDialogTitle>Apagar esta mensagem agendada?</AlertDialogTitle>
+                                                            <AlertDialogDescription>Essa ação não pode ser desfeita.</AlertDialogDescription>
+                                                        </AlertDialogHeader>
+                                                        <AlertDialogFooter>
+                                                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                                            <AlertDialogAction onClick={() => handleDeleteMessage(msg.id)}>Apagar</AlertDialogAction>
+                                                        </AlertDialogFooter>
+                                                    </AlertDialogContent>
+                                                </AlertDialog>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    </TableCell>
+                                </TableRow>
+                            )) : (
+                                <TableRow>
+                                    <TableCell colSpan={5} className="h-24 text-center">Nenhuma mensagem agendada.</TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
                 </CardContent>
-                <CardFooter>
-                    <p className="text-xs text-muted-foreground">
-                        Clique no botão acima para abrir a caixa de diálogo de envio de mensagem.
-                    </p>
-                </CardFooter>
             </Card>
         </div>
     );
 };
 
+const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdit }: { isOpen: boolean; onOpenChange: (isOpen: boolean) => void; onSave: (data: Omit<ScheduledGroupMessage, 'id' | 'status'>) => void; messageToEdit: ScheduledGroupMessage | null; }) => {
+    const [groupId, setGroupId] = useState('');
+    const [message, setMessage] = useState('');
+    const [sendDate, setSendDate] = useState<Date | undefined>(new Date());
+    const [sendTime, setSendTime] = useState({ hour: '12', minute: '00' });
+    
+    useEffect(() => {
+        if (isOpen) {
+            if (messageToEdit) {
+                setGroupId(messageToEdit.groupId);
+                setMessage(messageToEdit.message);
+                const date = messageToEdit.sendAt.toDate();
+                setSendDate(date);
+                setSendTime({
+                    hour: getHours(date).toString().padStart(2, '0'),
+                    minute: getMinutes(date).toString().padStart(2, '0')
+                });
+            } else {
+                // Reset for new message
+                setGroupId('');
+                setMessage('');
+                const now = new Date();
+                setSendDate(now);
+                setSendTime({
+                    hour: getHours(now).toString().padStart(2, '0'),
+                    minute: getMinutes(now).toString().padStart(2, '0')
+                });
+            }
+        }
+    }, [isOpen, messageToEdit]);
+
+    const handleSave = () => {
+        if (!groupId || !message || !sendDate) {
+            // Basic validation
+            return;
+        }
+
+        const finalDate = setSeconds(setMinutes(setHours(sendDate, parseInt(sendTime.hour)), parseInt(sendTime.minute)), 0);
+
+        onSave({
+            groupId,
+            message,
+            sendAt: Timestamp.fromDate(finalDate)
+        });
+    };
+
+    return (
+        <Dialog open={isOpen} onOpenChange={onOpenChange}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>{messageToEdit ? 'Editar' : 'Agendar'} Mensagem de Grupo</DialogTitle>
+                    <DialogDescription>
+                        Preencha os detalhes para {messageToEdit ? 'editar' : 'agendar'} uma nova mensagem para um grupo.
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                        <Label htmlFor="group-id">Grupo (JID)</Label>
+                        <Input id="group-id" value={groupId} onChange={e => setGroupId(e.target.value)} placeholder="Cole o JID do grupo aqui..."/>
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="group-message">Mensagem</Label>
+                        <Textarea id="group-message" value={message} onChange={e => setMessage(e.target.value)} placeholder="Escreva sua mensagem..."/>
+                    </div>
+                    <div className="grid gap-2">
+                        <Label>Data e Hora do Envio</Label>
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant="outline" className={cn("justify-start text-left font-normal", !sendDate && "text-muted-foreground")}>
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {sendDate ? format(sendDate, "dd/MM/yyyy") : <span>Escolha uma data</span>}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                                <Calendar mode="single" selected={sendDate} onSelect={setSendDate} initialFocus />
+                            </PopoverContent>
+                        </Popover>
+                        <div className="flex items-center gap-2">
+                            <Input
+                                type="number"
+                                value={sendTime.hour}
+                                onChange={e => setSendTime({...sendTime, hour: e.target.value})}
+                                className="w-20"
+                                placeholder="HH"
+                            />
+                            <span>:</span>
+                            <Input
+                                type="number"
+                                value={sendTime.minute}
+                                onChange={e => setSendTime({...sendTime, minute: e.target.value})}
+                                className="w-20"
+                                placeholder="MM"
+                            />
+                        </div>
+                    </div>
+                </div>
+                <DialogFooter>
+                    <DialogClose asChild>
+                        <Button variant="outline">Cancelar</Button>
+                    </DialogClose>
+                    <Button onClick={handleSave}>Salvar Agendamento</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
 
 export default AppDashboard;
-
-    
-
-    
