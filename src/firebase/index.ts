@@ -2,6 +2,7 @@
 
 import { firebaseConfig } from '@/firebase/config';
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
 import { getFirestore }from 'firebase/firestore'
 import {
   setDoc,
@@ -41,7 +42,7 @@ export function initializeFirebase() {
 export function getSdks(firebaseApp: FirebaseApp) {
   return {
     firebaseApp,
-    // Auth is no longer initialized or returned
+    auth: getAuth(firebaseApp),
     firestore: getFirestore(firebaseApp)
   };
 }
@@ -54,4 +55,4 @@ export * from './firestore/use-doc';
 export * from './auth/use-user';
 export * from './errors';
 export * from './error-emitter';
-export { setDoc, addDoc, updateDoc, deleteDoc };
+export { setDoc, addDoc, updateDoc, deleteDoc, getAuth };
