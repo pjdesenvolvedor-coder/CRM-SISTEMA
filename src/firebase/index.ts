@@ -2,7 +2,7 @@
 
 import { firebaseConfig } from '@/firebase/config';
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { getFirestore }from 'firebase/firestore'
 import {
   setDoc,
@@ -55,4 +55,4 @@ export * from './firestore/use-doc';
 export * from './auth/use-user';
 export * from './errors';
 export * from './error-emitter';
-export { setDoc, addDoc, updateDoc, deleteDoc, getAuth };
+export { setDoc, addDoc, updateDoc, deleteDoc, getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut };

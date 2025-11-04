@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Auth, User, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
+import { Auth, User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { getAuth } from 'firebase/auth';
 import { initializeFirebase } from '@/firebase';
 
@@ -8,11 +8,11 @@ export interface UserAuthHookResult {
   user: User | null;
   isUserLoading: boolean;
   userError: Error | null;
+  logout: () => Promise<void>;
 }
 
 /**
- * Hook de autenticação que lida com o estado do usuário
- * e realiza o login anônimo se nenhum usuário estiver logado.
+ * Hook de autenticação que lida com o estado do usuário.
  */
 export const useUser = (): UserAuthHookResult => {
   const [auth, setAuth] = useState<Auth | null>(null);
@@ -25,8 +25,8 @@ export const useUser = (): UserAuthHookResult => {
       const { firebaseApp } = initializeFirebase();
       const authInstance = getAuth(firebaseApp);
       setAuth(authInstance);
-      // Set initial user state from auth instance, might be null
       setUser(authInstance.currentUser);
+      setIsUserLoading(!authInstance.currentUser); 
     } catch (e) {
       console.error("Failed to initialize Firebase Auth", e);
       setUserError(e as Error);
@@ -36,7 +36,6 @@ export const useUser = (): UserAuthHookResult => {
 
   useEffect(() => {
     if (!auth) {
-      // If auth is not initialized, we are not done loading.
       setIsUserLoading(true);
       return;
     }
@@ -44,18 +43,9 @@ export const useUser = (): UserAuthHookResult => {
     const unsubscribe = onAuthStateChanged(
       auth,
       (user) => {
-        if (user) {
-          setUser(user);
-          setIsUserLoading(false);
-          setUserError(null);
-        } else {
-          // If no user, sign in anonymously
-          signInAnonymously(auth).catch((error) => {
-            console.error("Anonymous sign-in failed:", error);
-            setUserError(error);
-            setIsUserLoading(false);
-          });
-        }
+        setUser(user);
+        setIsUserLoading(false);
+        setUserError(null);
       },
       (error) => {
         console.error("Auth state change error:", error);
@@ -68,9 +58,17 @@ export const useUser = (): UserAuthHookResult => {
     return () => unsubscribe();
   }, [auth]);
 
+  const logout = async () => {
+    if (auth) {
+      await signOut(auth);
+      setUser(null);
+    }
+  };
+
   return {
     user,
     isUserLoading,
     userError,
+    logout,
   };
 };

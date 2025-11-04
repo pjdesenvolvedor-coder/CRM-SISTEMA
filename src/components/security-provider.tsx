@@ -1,59 +1,69 @@
 'use client';
 
-import React, { useState, useCallback, createContext, useContext } from 'react';
-import SecurityPage from './security-page';
+import React, { createContext, useContext, useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { Loader } from 'lucide-react';
 import { useUser as useUserHook } from '@/firebase';
 import type { User } from 'firebase/auth';
 
-interface SecurityContextType {
-    isAuthenticated: boolean;
-    logout: () => void;
-    user: User | null;
-    isUserLoading: boolean;
-  }
-  
-export const SecurityContext = createContext<SecurityContextType | undefined>(undefined);
+interface AuthContextType {
+  user: User | null;
+  isLoading: boolean;
+  logout: () => void;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const AUTH_ROUTES = ['/login', '/register'];
 
 export function SecurityProvider({ children }: { children: React.ReactNode }) {
-  const [isPasswordAuthenticated, setIsPasswordAuthenticated] = useState(false);
-  const { user, isUserLoading } = useUserHook();
+  const { user, isUserLoading, logout } = useUserHook();
+  const router = useRouter();
+  const pathname = usePathname();
 
-  const handleSuccess = useCallback(() => {
-    setIsPasswordAuthenticated(true);
-  }, []);
+  useEffect(() => {
+    if (!isUserLoading) {
+      const isAuthRoute = AUTH_ROUTES.includes(pathname);
+      
+      if (!user && !isAuthRoute) {
+        // If not logged in and not on an auth page, redirect to login
+        router.push('/login');
+      } else if (user && isAuthRoute) {
+        // If logged in and on an auth page, redirect to dashboard
+        router.push('/');
+      }
+    }
+  }, [user, isUserLoading, router, pathname]);
 
-  const logout = useCallback(() => {
-    setIsPasswordAuthenticated(false);
-    // Note: Firebase anonymous user will persist unless explicitly signed out,
-    // which is the desired behavior here to keep a stable UID.
-  }, []);
-
-  const isAuthenticated = isPasswordAuthenticated && !!user;
-  
-  if (!isPasswordAuthenticated) {
-    return <SecurityPage onSuccess={handleSuccess} />;
-  }
-
-  if (isUserLoading) {
+  if (isUserLoading || (!user && !AUTH_ROUTES.includes(pathname))) {
     return (
-        <div className="flex h-screen w-full items-center justify-center">
-            <Loader className="h-12 w-12 animate-spin text-primary" />
-        </div>
+      <div className="flex h-screen w-full items-center justify-center">
+        <Loader className="h-12 w-12 animate-spin text-primary" />
+      </div>
     );
   }
-  
+
+  // If user is loaded and on an auth route, or is logged in, render children
+  if ((!isUserLoading && AUTH_ROUTES.includes(pathname)) || user) {
+     return (
+        <AuthContext.Provider value={{ user, isLoading: isUserLoading, logout }}>
+            {children}
+        </AuthContext.Provider>
+    );
+  }
+
+  // Fallback loading state
   return (
-    <SecurityContext.Provider value={{ isAuthenticated, logout, user, isUserLoading }}>
-        {isAuthenticated ? children : <SecurityPage onSuccess={handleSuccess} />}
-    </SecurityContext.Provider>
+    <div className="flex h-screen w-full items-center justify-center">
+        <Loader className="h-12 w-12 animate-spin text-primary" />
+    </div>
   );
 }
 
 export const useSecurity = () => {
-    const context = useContext(SecurityContext);
-    if (context === undefined) {
-      throw new Error('useSecurity must be used within a SecurityProvider');
-    }
-    return context;
-  };
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useSecurity must be used within a SecurityProvider');
+  }
+  return context;
+};

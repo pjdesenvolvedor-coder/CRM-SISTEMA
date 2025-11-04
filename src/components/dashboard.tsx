@@ -136,11 +136,6 @@ type ScheduledGroupMessage = {
     isRecurring: boolean;
 };
 
-const getInitialState = (): { status: ConnectionStatus, profileName: string | null, profilePic: string | null } => {
-    // Always start with loading to prevent hydration mismatch.
-    return { status: 'loading', profileName: null, profilePic: null };
-};
-
 const getClientStatus = (dueDate: Date | Timestamp | null): ClientStatus => {
     if (!dueDate) {
       return 'ativo'; // No due date means always active
@@ -168,12 +163,11 @@ const getClientStatus = (dueDate: Date | Timestamp | null): ClientStatus => {
 const AppDashboard = () => {
     const pathname = usePathname();
     const firestore = useFirestore();
-    const { logout, user, isUserLoading } = useSecurity();
+    const { logout, user, isLoading: isUserLoading } = useSecurity();
     const userId = user?.uid;
 
-    const initialState = getInitialState();
-    const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(initialState.status);
-    const [zapProfile, setZapProfile] = useState<{name: string | null, pic: string | null}>({ name: initialState.profileName, pic: initialState.pic });
+    const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('loading');
+    const [zapProfile, setZapProfile] = useState<{name: string | null, pic: string | null}>({ name: null, pic: null });
     
     const [isTransitioningPage, startTransition] = useTransition();
     const { toast } = useToast();
