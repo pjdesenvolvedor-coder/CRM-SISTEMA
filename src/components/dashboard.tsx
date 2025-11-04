@@ -137,23 +137,9 @@ type ScheduledGroupMessage = {
 };
 
 const getInitialState = (): { status: ConnectionStatus, profileName: string | null, profilePic: string | null } => {
-    if (typeof window === 'undefined') {
-        return { status: 'loading', profileName: null, profilePic: null };
-    }
-    try {
-        const storedStatus = localStorage.getItem('zap_connection_status') as ConnectionStatus | null;
-        if (storedStatus === 'connected') {
-            const profileName = localStorage.getItem('zap_profile_name');
-            const profilePic = localStorage.getItem('zap_profile_pic');
-            return { status: 'connected', profileName, profilePic };
-        }
-        return { status: 'loading', profileName: null, profilePic: null };
-    } catch (error) {
-        console.error("Error reading from localStorage", error);
-        return { status: 'loading', profileName: null, profilePic: null };
-    }
+    // Always start with loading to prevent hydration mismatch.
+    return { status: 'loading', profileName: null, profilePic: null };
 };
-
 
 const getClientStatus = (dueDate: Date | Timestamp | null): ClientStatus => {
     if (!dueDate) {
@@ -182,9 +168,9 @@ const getClientStatus = (dueDate: Date | Timestamp | null): ClientStatus => {
 const AppDashboard = () => {
     const pathname = usePathname();
     const firestore = useFirestore();
-    const { logout, user } = useSecurity();
+    const { logout, user, isUserLoading } = useSecurity();
 
-    const userId = user?.uid ?? 'psozJegDEETMk9DuHrSfINHKwR2';
+    const userId = user?.uid;
 
     const initialState = getInitialState();
     const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(initialState.status);
@@ -208,6 +194,23 @@ const AppDashboard = () => {
             setIsClientMenuOpen(false)
         }
     }, [pathname]);
+
+    useEffect(() => {
+        // This effect runs only on the client, after hydration.
+        if (typeof window !== 'undefined') {
+          try {
+            const storedStatus = localStorage.getItem('zap_connection_status') as ConnectionStatus | null;
+            if (storedStatus === 'connected') {
+              const profileName = localStorage.getItem('zap_profile_name');
+              const profilePic = localStorage.getItem('zap_profile_pic');
+              setConnectionStatus('connected');
+              setZapProfile({ name: profileName, pic: profilePic });
+            }
+          } catch (error) {
+            console.error("Error reading from localStorage", error);
+          }
+        }
+      }, []);
 
     useEffect(() => {
         try {
@@ -276,20 +279,20 @@ const AppDashboard = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
       }, []); // Run only once on mount
 
-    const subscriptionsQuery = useMemoFirebase(() => firestore ? collection(firestore, 'users', userId, 'subscriptions') : null, [firestore, userId]);
+    const subscriptionsQuery = useMemoFirebase(() => firestore && userId ? collection(firestore, 'users', userId, 'subscriptions') : null, [firestore, userId]);
     const { data: subscriptions, isLoading: subscriptionsLoading } = useCollection<Subscription>(subscriptionsQuery);
 
-    const clientsQuery = useMemoFirebase(() => firestore ? collection(firestore, 'users', userId, 'clients') : null, [firestore, userId]);
+    const clientsQuery = useMemoFirebase(() => firestore && userId ? collection(firestore, 'users', userId, 'clients') : null, [firestore, userId]);
     const { data: clients, isLoading: clientsLoading } = useCollection<Client>(clientsQuery);
     
-    const automationConfigQuery = useMemoFirebase(() => firestore ? collection(firestore, 'users', userId, 'automation') : null, [firestore, userId]);
+    const automationConfigQuery = useMemoFirebase(() => firestore && userId ? collection(firestore, 'users', userId, 'automation') : null, [firestore, userId]);
     const { data: automationConfig, isLoading: automationLoading } = useCollection<AutomationConfig>(automationConfigQuery);
     const automationSettings = useMemo(() => automationConfig?.[0], [automationConfig]);
 
-    const notesQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'users', userId, 'notes'), orderBy('createdAt', 'desc')) : null, [firestore, userId]);
+    const notesQuery = useMemoFirebase(() => firestore && userId ? query(collection(firestore, 'users', userId, 'notes'), orderBy('createdAt', 'desc')) : null, [firestore, userId]);
     const { data: notes, isLoading: notesLoading } = useCollection<Note>(notesQuery);
 
-    const scheduledMessagesQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'users', userId, 'scheduledGroupMessages'), orderBy('sendAt', 'desc')) : null, [firestore, userId]);
+    const scheduledMessagesQuery = useMemoFirebase(() => firestore && userId ? query(collection(firestore, 'users', userId, 'scheduledGroupMessages'), orderBy('sendAt', 'desc')) : null, [firestore, userId]);
     const { data: scheduledMessages, isLoading: scheduledMessagesLoading } = useCollection<ScheduledGroupMessage>(scheduledMessagesQuery);
 
     const [supportClient, setSupportClient] = useState<Client | null>(null);
@@ -322,7 +325,7 @@ const AppDashboard = () => {
     }, []);
 
     const sendAutomationMessage = useMemo(() => (client: Client, message: string, type: 'due' | 'reminder' | 'remarketing-due' | 'remarketing-reg') => {
-        if (!firestore) return;
+        if (!firestore || !userId) return;
     
         const formattedMessage = formatMessage(message, client);
     
@@ -437,7 +440,7 @@ const AppDashboard = () => {
     }, [automationSettings, clients, firestore, transformedClients, sendAutomationMessage]);
 
     const handleToggleSupport = useMemo(() => (client: Client) => {
-        if (!firestore) return;
+        if (!firestore || !userId) return;
         
         if (client.isResale) {
             setSupportClient(client);
@@ -448,14 +451,14 @@ const AppDashboard = () => {
     }, [firestore, userId]);
     
     const handleSaveSupportEmails = useMemo(() => (clientId: string, supportEmails: string[]) => {
-        if (!firestore) return;
+        if (!firestore || !userId) return;
         const clientDoc = doc(firestore, 'users', userId, 'clients', clientId);
         updateDoc(clientDoc, { supportEmails: supportEmails, isSupport: supportEmails.length > 0 });
         setSupportClient(null);
     }, [firestore, userId]);
 
     useEffect(() => {
-        if (!scheduledMessages || !firestore) {
+        if (!scheduledMessages || !firestore || !userId) {
             return;
         }
     
@@ -529,7 +532,7 @@ const AppDashboard = () => {
         }
     };
     
-    const isLoading = subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading;
+    const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading;
 
     if (isLoading && !isTransitioningPage) {
         return (
@@ -915,7 +918,7 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport }: { 
     const [inputValue, setInputValue] = useState('Ativo');
     const firestore = useFirestore();
     const { user } = useSecurity();
-    const userId = user?.uid ?? 'psozJegDEETMk9DuHrSfINHKwR2';
+    const userId = user?.uid;
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { toast } = useToast();
 
@@ -978,7 +981,7 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport }: { 
 
     const handleImportClients = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
-        if (!file || !firestore) {
+        if (!file || !firestore || !userId) {
             return;
         }
 
@@ -1096,7 +1099,7 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport }: { 
     };
 
     const handleAddClient = (client: Omit<Client, 'id' | 'status'>) => {
-        if (!firestore) return;
+        if (!firestore || !userId) return;
         const now = Timestamp.now();
         const clientData = {
             ...client,
@@ -1114,7 +1117,7 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport }: { 
     };
     
     const handleUpdateClient = (updatedClient: Client) => {
-        if (!firestore) return;
+        if (!firestore || !userId) return;
         const { id, status, ...clientData } = updatedClient; // remove derived status before saving
         const clientDoc = doc(firestore, 'users', userId, 'clients', id);
         
@@ -1129,7 +1132,7 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport }: { 
     };
 
     const handleDeleteClient = (clientId: string) => {
-        if(!firestore) return;
+        if(!firestore || !userId) return;
         const clientDoc = doc(firestore, 'users', userId, 'clients', clientId);
         deleteDoc(clientDoc);
     };
@@ -1750,10 +1753,10 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
     const [isPending, startTransition] = useTransition();
     const [confirmationText, setConfirmationText] = useState('');
     const { user } = useSecurity();
-    const userId = user?.uid ?? 'psozJegDEETMk9DuHrSfINHKwR2';
+    const userId = user?.uid;
 
     const handleAddSubscription = () => {
-      if (newSubscriptionName.trim() && newSubscriptionPrice && firestore) {
+      if (newSubscriptionName.trim() && newSubscriptionPrice && firestore && userId) {
         const newSubscription = {
           name: newSubscriptionName.trim(),
           price: parseFloat(newSubscriptionPrice),
@@ -1766,7 +1769,7 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
     };
 
     const handleDeleteSubscription = (subscriptionId: string) => {
-        if (!firestore) return;
+        if (!firestore || !userId) return;
         const subDoc = doc(firestore, 'users', userId, 'subscriptions', subscriptionId);
         deleteDoc(subDoc);
     };
@@ -1778,7 +1781,7 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
     };
 
     const handleEditSubscription = () => {
-        if (editingSubscription && editedName.trim() && editedPrice && firestore) {
+        if (editingSubscription && editedName.trim() && editedPrice && firestore && userId) {
             const subDoc = doc(firestore, 'users', userId, 'subscriptions', editingSubscription.id);
             updateDoc(subDoc, {
                 name: editedName.trim(),
@@ -1792,11 +1795,11 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
 
     const handleDeleteAllClients = () => {
         startTransition(async () => {
-            if (!firestore) {
+            if (!firestore || !userId) {
                 toast({
                     variant: 'destructive',
                     title: 'Erro',
-                    description: 'Banco de dados não disponível.',
+                    description: 'Banco de dados não disponível ou usuário não autenticado.',
                 });
                 return;
             }
@@ -2402,7 +2405,7 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
     const { toast } = useToast();
     const [isPending, startTransition] = useTransition();
     const { user } = useSecurity();
-    const userId = user?.uid ?? 'psozJegDEETMk9DuHrSfINHKwR2';
+    const userId = user?.uid;
 
     const [isEnabled, setIsEnabled] = useState(config?.isEnabled ?? false);
     const [message, setMessage] = useState(config?.message ?? 'Olá {cliente}! Sua assinatura venceu hoje. Para renovar, acesse nosso site.');
@@ -2419,8 +2422,8 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
   
     const handleSaveAutomation = () => {
       startTransition(() => {
-        if (!firestore) {
-          toast({ variant: 'destructive', title: 'Erro', description: 'Banco de dados não disponível.' });
+        if (!firestore || !userId) {
+          toast({ variant: 'destructive', title: 'Erro', description: 'Banco de dados não disponível ou usuário não autenticado.' });
           return;
         }
         
@@ -2798,7 +2801,7 @@ const RemarketingPage = ({ config }: { config: AutomationConfig | undefined }) =
     const { toast } = useToast();
     const [isPending, startTransition] = useTransition();
     const { user } = useSecurity();
-    const userId = user?.uid ?? 'psozJegDEETMk9DuHrSfINHKwR2';
+    const userId = user?.uid;
 
     const [postDueDateIsEnabled, setPostDueDateIsEnabled] = useState(config?.remarketingPostDueDateIsEnabled ?? false);
     const [postDueDateDays, setPostDueDateDays] = useState(config?.remarketingPostDueDateDays ?? 7);
@@ -2819,8 +2822,8 @@ const RemarketingPage = ({ config }: { config: AutomationConfig | undefined }) =
   
     const handleSaveRemarketing = () => {
       startTransition(() => {
-        if (!firestore) {
-          toast({ variant: 'destructive', title: 'Erro', description: 'Banco de dados não disponível.' });
+        if (!firestore || !userId) {
+          toast({ variant: 'destructive', title: 'Erro', description: 'Banco de dados não disponível ou usuário não autenticado.' });
           return;
         }
         
@@ -2973,11 +2976,11 @@ const NotesPage = ({ notes }: { notes: Note[] }) => {
     const firestore = useFirestore();
     const { toast } = useToast();
     const { user } = useSecurity();
-    const userId = user?.uid ?? 'psozJegDEETMk9DuHrSfINHKwR2';
+    const userId = user?.uid;
 
     const handleAddNote = () => {
-        if (!firestore) {
-            toast({ variant: 'destructive', title: 'Erro', description: 'Banco de dados não disponível.' });
+        if (!firestore || !userId) {
+            toast({ variant: 'destructive', title: 'Erro', description: 'Banco de dados não disponível ou usuário não autenticado.' });
             return;
         }
         if (noteContent.trim() === '') {
@@ -2999,13 +3002,13 @@ const NotesPage = ({ notes }: { notes: Note[] }) => {
     };
 
     const handleUpdateNote = (noteId: string, updates: Partial<Note>) => {
-        if (!firestore) return;
+        if (!firestore || !userId) return;
         const noteDoc = doc(firestore, 'users', userId, 'notes', noteId);
         updateDoc(noteDoc, updates);
     };
 
     const handleDeleteNote = (noteId: string) => {
-        if (!firestore) return;
+        if (!firestore || !userId) return;
         const noteDoc = doc(firestore, 'users', userId, 'notes', noteId);
         deleteDoc(noteDoc);
     };
@@ -3345,10 +3348,10 @@ const GroupMessageScheduler = ({ scheduledMessages }: { scheduledMessages: Sched
     const [editingMessage, setEditingMessage] = useState<ScheduledGroupMessage | null>(null);
     const firestore = useFirestore();
     const { user } = useSecurity();
-    const userId = user?.uid ?? 'psozJegDEETMk9DuHrSfINHKwR2';
+    const userId = user?.uid;
 
     const handleSaveMessage = (messageData: Omit<ScheduledGroupMessage, 'id' | 'status'>) => {
-        if (!firestore) return;
+        if (!firestore || !userId) return;
 
         if (editingMessage) {
             // Update
@@ -3364,7 +3367,7 @@ const GroupMessageScheduler = ({ scheduledMessages }: { scheduledMessages: Sched
     };
 
     const handleDeleteMessage = (messageId: string) => {
-        if (!firestore) return;
+        if (!firestore || !userId) return;
         const msgDoc = doc(firestore, 'users', userId, 'scheduledGroupMessages', messageId);
         deleteDoc(msgDoc);
     };

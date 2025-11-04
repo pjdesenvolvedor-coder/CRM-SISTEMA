@@ -21,15 +21,24 @@ export const useUser = (): UserAuthHookResult => {
   const [userError, setUserError] = useState<Error | null>(null);
 
   useEffect(() => {
-    const { firebaseApp } = initializeFirebase();
-    const authInstance = getAuth(firebaseApp);
-    setAuth(authInstance);
-    setUser(authInstance.currentUser);
+    try {
+      const { firebaseApp } = initializeFirebase();
+      const authInstance = getAuth(firebaseApp);
+      setAuth(authInstance);
+      // Set initial user state from auth instance, might be null
+      setUser(authInstance.currentUser);
+    } catch (e) {
+      console.error("Failed to initialize Firebase Auth", e);
+      setUserError(e as Error);
+      setIsUserLoading(false);
+    }
   }, []);
 
   useEffect(() => {
     if (!auth) {
-        return;
+      // If auth is not initialized, we are not done loading.
+      setIsUserLoading(true);
+      return;
     }
 
     const unsubscribe = onAuthStateChanged(
