@@ -48,7 +48,7 @@ import {
     TableRow,
   } from "@/components/ui/table"
 import { Textarea } from './ui/textarea';
-import { sendMessage, getStatus, sendToGroupWebhook, sendGroupMessage, sendTestWebhook } from '@/app/actions';
+import { sendMessage, getStatus, sendToGroupWebhook, sendGroupMessage, sendTestWebhook, sendScheduledGroupMessageWithImage } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Loader } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from './ui/card';
@@ -137,6 +137,7 @@ type ScheduledGroupMessage = {
     sendAt: Timestamp;
     status: 'pending' | 'sent';
     isRecurring: boolean;
+    imageBase64?: string;
 };
 
 type ApiKey = {
@@ -482,38 +483,41 @@ const AppDashboard = () => {
             pendingMessages.forEach(msg => {
                 const sendAt = msg.sendAt.toDate();
                 if (isPast(sendAt)) {
-                    sendGroupMessage(msg.groupId, msg.message)
-                        .then(result => {
-                            if (result.error) {
-                                throw new Error(result.error);
-                            }
+                    const sendPromise = msg.imageBase64 
+                        ? sendScheduledGroupMessageWithImage(msg.groupId, msg.message, msg.imageBase64)
+                        : sendGroupMessage(msg.groupId, msg.message);
     
-                            const msgDoc = doc(firestore, 'users', userId, 'scheduledGroupMessages', msg.id);
+                    sendPromise.then(result => {
+                        if (result.error) {
+                            throw new Error(result.error);
+                        }
     
-                            if (msg.isRecurring) {
-                                // Re-schedule for the next day
-                                const nextSendAt = addDays(sendAt, 1);
-                                updateDoc(msgDoc, { sendAt: Timestamp.fromDate(nextSendAt), status: 'pending' });
-                                toast({
-                                    title: 'Mensagem Recorrente Enviada',
-                                    description: `Mensagem enviada para o grupo ${msg.groupId} e reagendada para amanhã.`,
-                                });
-                            } else {
-                                // Mark as sent
-                                updateDoc(msgDoc, { status: 'sent' });
-                                toast({
-                                    title: 'Mensagem de Grupo Enviada',
-                                    description: `Mensagem agendada enviada para o grupo ${msg.groupId}.`,
-                                });
-                            }
-                        })
-                        .catch(error => {
+                        const msgDoc = doc(firestore, 'users', userId, 'scheduledGroupMessages', msg.id);
+    
+                        if (msg.isRecurring) {
+                            // Re-schedule for the next day
+                            const nextSendAt = addDays(sendAt, 1);
+                            updateDoc(msgDoc, { sendAt: Timestamp.fromDate(nextSendAt), status: 'pending' });
                             toast({
-                                variant: "destructive",
-                                title: 'Falha no Envio Agendado',
-                                description: `Não foi possível enviar a mensagem para o grupo ${msg.groupId}: ${error.message}`,
+                                title: 'Mensagem Recorrente Enviada',
+                                description: `Mensagem enviada para o grupo ${msg.groupId} e reagendada para amanhã.`,
                             });
+                        } else {
+                            // Mark as sent
+                            updateDoc(msgDoc, { status: 'sent' });
+                            toast({
+                                title: 'Mensagem de Grupo Enviada',
+                                description: `Mensagem agendada enviada para o grupo ${msg.groupId}.`,
+                            });
+                        }
+                    })
+                    .catch(error => {
+                        toast({
+                            variant: "destructive",
+                            title: 'Falha no Envio Agendado',
+                            description: `Não foi possível enviar a mensagem para o grupo ${msg.groupId}: ${error.message}`,
                         });
+                    });
                 }
             });
     
@@ -3481,6 +3485,7 @@ const GroupMessageScheduler = ({ scheduledMessages }: { scheduledMessages: Sched
                                                 {msg.status === 'sent' ? 'Enviado' : 'Pendente'}
                                             </Badge>
                                             {msg.isRecurring && <Repeat className='h-4 w-4 text-muted-foreground' title='Mensagem recorrente' />}
+                                            {msg.imageBase64 && <ImageIcon className='h-4 w-4 text-muted-foreground' title='Contém imagem' />}
                                         </div>
                                     </TableCell>
                                     <TableCell className="font-mono text-xs max-w-[150px] truncate">{msg.groupId}</TableCell>
@@ -3537,6 +3542,19 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
     const [sendDate, setSendDate] = useState<Date | undefined>(new Date());
     const [sendTime, setSendTime] = useState({ hour: '12', minute: '00' });
     const [isRecurring, setIsRecurring] = useState(false);
+    const [imageBase64, setImageBase64] = useState('');
+    const [imageFile, setImageFile] = useState<File | null>(null);
+    const [isConverting, setIsConverting] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const { toast } = useToast();
+
+    const clearImage = () => {
+        setImageFile(null);
+        setImageBase64('');
+        if(fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    }
     
     useEffect(() => {
         if (isOpen) {
@@ -3550,6 +3568,8 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
                     minute: getMinutes(date).toString().padStart(2, '0')
                 });
                 setIsRecurring(messageToEdit.isRecurring);
+                setImageBase64(messageToEdit.imageBase64 || '');
+                setImageFile(null); // We don't have the file object, just the base64
             } else {
                 // Reset for new message
                 setGroupId('');
@@ -3561,13 +3581,14 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
                     minute: getMinutes(now).toString().padStart(2, '0')
                 });
                 setIsRecurring(false);
+                clearImage();
             }
         }
     }, [isOpen, messageToEdit]);
 
     const handleSave = () => {
         if (!groupId || !message || !sendDate) {
-            // Basic validation
+            toast({ variant: 'destructive', title: 'Campos Obrigatórios', description: 'Preencha o JID do grupo, a mensagem e a data.' });
             return;
         }
 
@@ -3578,8 +3599,43 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
             message,
             sendAt: Timestamp.fromDate(finalDate),
             isRecurring,
+            imageBase64: imageBase64 || undefined,
         });
     };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            const file = e.target.files[0];
+            if (file.size > 5 * 1024 * 1024) { // 5MB limit
+                toast({
+                    variant: 'destructive',
+                    title: 'Arquivo muito grande',
+                    description: 'Por favor, selecione uma imagem menor que 5MB.',
+                });
+                return;
+            }
+            setImageFile(file);
+            
+            setIsConverting(true);
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => {
+                setImageBase64(reader.result as string);
+                setIsConverting(false);
+            };
+            reader.onerror = (error) => {
+                console.error("Error converting file to Base64:", error);
+                toast({
+                    variant: 'destructive',
+                    title: 'Erro na conversão',
+                    description: 'Não foi possível converter a imagem para Base64.',
+                });
+                setIsConverting(false);
+            };
+        }
+    };
+
+    const isActionPending = isConverting;
 
     return (
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -3598,6 +3654,31 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
                     <div className="grid gap-2">
                         <Label htmlFor="group-message">Mensagem</Label>
                         <Textarea id="group-message" value={message} onChange={e => setMessage(e.target.value)} placeholder="Escreva sua mensagem..."/>
+                    </div>
+                     <div className="grid gap-2">
+                        <Label htmlFor="schedule-image">Imagem (Opcional)</Label>
+                        <Input
+                            id="schedule-image"
+                            type="file"
+                            accept="image/*"
+                            ref={fileInputRef}
+                            onChange={handleFileChange}
+                            className="hidden"
+                            disabled={isActionPending}
+                        />
+                        <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isActionPending}>
+                            <ImageIcon className="mr-2 h-4 w-4" />
+                            {(imageFile || imageBase64) ? 'Trocar Imagem' : 'Selecionar Imagem'}
+                        </Button>
+                        {(imageFile || imageBase64) && (
+                            <div className="text-sm text-muted-foreground flex items-center gap-2">
+                                <span className="truncate">{imageFile ? imageFile.name : 'Imagem carregada'}</span>
+                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={clearImage} disabled={isActionPending}>
+                                    <XIcon className="h-4 w-4" />
+                                </Button>
+                            </div>
+                        )}
+                        {isConverting && <Progress value={100} className="w-full h-2 mt-2 animate-pulse" />}
                     </div>
                     <div className="grid gap-2">
                         <Label>Data e Hora do Envio</Label>
@@ -3646,9 +3727,12 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
                 </div>
                 <DialogFooter>
                     <DialogClose asChild>
-                        <Button variant="outline">Cancelar</Button>
+                        <Button variant="outline" disabled={isActionPending}>Cancelar</Button>
                     </DialogClose>
-                    <Button onClick={handleSave}>Salvar Agendamento</Button>
+                    <Button onClick={handleSave} disabled={isActionPending}>
+                        {isActionPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
+                        Salvar Agendamento
+                    </Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>

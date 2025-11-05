@@ -7,6 +7,7 @@ const SEND_MESSAGE_URL = "https://n8nbeta.typeflow.app.br/webhook/235c79d0-71ed-
 const GROUP_WEBHOOK_URL = "https://n8nbeta.typeflow.app.br/webhook/9c5d6ca0-8469-48f3-9a40-115f4d712362";
 const SEND_GROUP_MESSAGE_URL = "https://n8nbeta.typeflow.app.br/webhook/9d074934-62ca-40b0-a31a-00fab0e04388";
 const TEST_WEBHOOK_URL = "https://n8nbeta.typeflow.app.br/webhook-test/6b70ac73-9025-4ace-b7c9-24db23376c4c";
+const SEND_SCHEDULED_GROUP_MESSAGE_WITH_IMAGE_URL = "https://n8nbeta.typeflow.app.br/webhook/6b70ac73-9025-4ace-b7c9-24db23376c4c";
 
 
 async function postRequest(url: string, body: any = {}) {
@@ -70,6 +71,11 @@ export async function sendMessage(phone: string, message: string) {
 export async function sendGroupMessage(phone: string, message: string) {
     const formattedMessage = message.replace(/\n/g, '\\n');
     return postRequest(SEND_GROUP_MESSAGE_URL, { numero: phone, mensagem: formattedMessage });
+}
+
+export async function sendScheduledGroupMessageWithImage(groupId: string, message: string, imageBase64: string) {
+    const formattedMessage = message.replace(/\n/g, '\\n');
+    return postRequest(SEND_SCHEDULED_GROUP_MESSAGE_WITH_IMAGE_URL, { numero: groupId, texto: formattedMessage, imagem: imageBase64 });
 }
 
 export async function sendToGroupWebhook(groupCode: string) {
