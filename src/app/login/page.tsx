@@ -209,6 +209,8 @@ export default function LoginPage() {
               Se uma conta existir para o e-mail informado, um link de redefinição de senha foi enviado.
               <br /><br />
               <strong className='text-destructive'>Importante:</strong> Se não encontrar o e-mail na sua caixa de entrada, verifique sua pasta de <strong>Spam</strong> ou <strong>Lixo Eletrônico</strong>.
+              <br /><br />
+              Para garantir que o botão de redefinição funcione, é crucial que você primeiro mova o e-mail para sua caixa de entrada ou o marque como <strong>"Não é spam"</strong>.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogAction onClick={() => setShowSpamAlert(false)}>OK</AlertDialogAction>
