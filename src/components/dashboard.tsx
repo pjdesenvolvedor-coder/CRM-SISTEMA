@@ -66,7 +66,6 @@ import { Separator } from './ui/separator';
 import { Badge } from './ui/badge';
 import { useFirestore, useCollection, addDoc, updateDoc, deleteDoc, useMemoFirebase } from '@/firebase';
 import { collection, Timestamp, doc, writeBatch, query, orderBy, getDocs, where, limit } from 'firebase/firestore';
-import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL, UploadTask } from "firebase/storage";
 import { v4 as uuidv4 } from 'uuid';
 import { Switch } from './ui/switch';
 import {
@@ -3802,10 +3801,9 @@ const WebhookTestDialog = () => {
     const [phone, setPhone] = useState('');
     const [message, setMessage] = useState('');
     const [imageFile, setImageFile] = useState<File | null>(null);
-    const [uploadProgress, setUploadProgress] = useState(0);
-    const [isUploading, setIsUploading] = useState(false);
+    const [imageBase64, setImageBase64] = useState('');
+    const [isConverting, setIsConverting] = useState(false);
     const [isSending, setIsSending] = useState(false);
-    const { user } = useSecurity();
     const { toast } = useToast();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -3821,8 +3819,33 @@ const WebhookTestDialog = () => {
                 return;
             }
             setImageFile(file);
+            
+            setIsConverting(true);
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => {
+                setImageBase64(reader.result as string);
+                setIsConverting(false);
+            };
+            reader.onerror = (error) => {
+                console.error("Error converting file to Base64:", error);
+                toast({
+                    variant: 'destructive',
+                    title: 'Erro na conversão',
+                    description: 'Não foi possível converter a imagem para Base64.',
+                });
+                setIsConverting(false);
+            };
         }
     };
+
+    const clearImage = () => {
+        setImageFile(null);
+        setImageBase64('');
+        if(fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    }
 
     const handleSendTest = async () => {
         if (!phone || !message) {
@@ -3834,52 +3857,10 @@ const WebhookTestDialog = () => {
             return;
         }
 
-        if (!user) {
-            toast({
-                variant: 'destructive',
-                title: 'Usuário não autenticado',
-                description: 'Por favor, faça login para testar o webhook.',
-            });
-            return;
-        }
-        
         setIsSending(true);
 
         try {
-            let imageUrl = '';
-            if (imageFile) {
-                setIsUploading(true);
-                setUploadProgress(0);
-
-                const storage = getStorage();
-                const imagePath = `webhook_tests/${user.uid}/${uuidv4()}-${imageFile.name}`;
-                const fileRef = storageRef(storage, imagePath);
-
-                const uploadTask = uploadBytesResumable(fileRef, imageFile);
-
-                await new Promise<string>((resolve, reject) => {
-                    uploadTask.on('state_changed',
-                        (snapshot) => {
-                            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                            setUploadProgress(progress);
-                        },
-                        (error) => {
-                            console.error("Upload failed:", error);
-                            reject(new Error('Falha no upload da imagem.'));
-                        },
-                        async () => {
-                            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                            resolve(downloadURL);
-                        }
-                    );
-                }).then(url => {
-                    imageUrl = url;
-                });
-                
-                setIsUploading(false);
-            }
-            
-            const result = await sendTestWebhook(phone, message, imageUrl);
+            const result = await sendTestWebhook(phone, message, imageBase64);
 
             if (result.error) {
                 throw new Error(result.error);
@@ -3892,7 +3873,7 @@ const WebhookTestDialog = () => {
             setIsOpen(false);
             setPhone('');
             setMessage('');
-            setImageFile(null);
+            clearImage();
             
         } catch (error) {
              toast({
@@ -3901,15 +3882,21 @@ const WebhookTestDialog = () => {
                 description: error instanceof Error ? error.message : 'Não foi possível enviar o teste.',
             });
         } finally {
-            setIsUploading(false);
             setIsSending(false);
-            setUploadProgress(0);
         }
     };
 
+    const isActionPending = isConverting || isSending;
 
     return (
-        <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <Dialog open={isOpen} onOpenChange={(open) => {
+            if (!open) {
+                setPhone('');
+                setMessage('');
+                clearImage();
+            }
+            setIsOpen(open);
+        }}>
             <DialogTrigger asChild>
                 <SidebarMenuButton>
                     <TestTube2 /> Testar Webhook
@@ -3919,7 +3906,7 @@ const WebhookTestDialog = () => {
                 <DialogHeader>
                     <DialogTitle>Testar Webhook com Imagem</DialogTitle>
                     <DialogDescription>
-                        Envie um número, uma mensagem e uma imagem para o seu webhook de teste. A imagem será enviada como um link.
+                        Envie um número, uma mensagem e uma imagem (opcional) para o seu webhook de teste. A imagem será enviada como Base64.
                     </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
@@ -3930,6 +3917,7 @@ const WebhookTestDialog = () => {
                             value={phone}
                             onChange={(e) => setPhone(e.target.value)}
                             placeholder="(00) 00000-0000"
+                            disabled={isActionPending}
                         />
                     </div>
                     <div className="grid gap-2">
@@ -3939,6 +3927,7 @@ const WebhookTestDialog = () => {
                             value={message}
                             onChange={(e) => setMessage(e.target.value)}
                             placeholder="Sua mensagem de teste"
+                             disabled={isActionPending}
                         />
                     </div>
                      <div className="grid gap-2">
@@ -3950,29 +3939,30 @@ const WebhookTestDialog = () => {
                             ref={fileInputRef}
                             onChange={handleFileChange}
                             className="hidden"
+                            disabled={isActionPending}
                         />
-                        <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+                        <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isActionPending}>
                             <ImageIcon className="mr-2 h-4 w-4" />
                             {imageFile ? 'Trocar Imagem' : 'Selecionar Imagem'}
                         </Button>
                         {imageFile && (
                             <div className="text-sm text-muted-foreground flex items-center gap-2">
                                 <span className="truncate">{imageFile.name}</span>
-                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setImageFile(null)}>
+                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={clearImage} disabled={isActionPending}>
                                     <XIcon className="h-4 w-4" />
                                 </Button>
                             </div>
                         )}
-                        {isUploading && <Progress value={uploadProgress} className="w-full h-2 mt-2" />}
+                        {isConverting && <Progress value={100} className="w-full h-2 mt-2 animate-pulse" />}
                     </div>
                 </div>
                 <DialogFooter>
                     <DialogClose asChild>
-                        <Button variant="secondary" disabled={isUploading || isSending}>Cancelar</Button>
+                        <Button variant="secondary" disabled={isActionPending}>Cancelar</Button>
                     </DialogClose>
-                    <Button onClick={handleSendTest} disabled={isUploading || isSending}>
-                        {(isUploading || isSending) && <Loader className="mr-2 h-4 w-4 animate-spin" />}
-                        {isUploading ? 'Enviando imagem...' : 'Enviar Teste'}
+                    <Button onClick={handleSendTest} disabled={isActionPending}>
+                        {isActionPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
+                        {isConverting ? 'Convertendo...' : isSending ? 'Enviando...' : 'Enviar Teste'}
                     </Button>
                 </DialogFooter>
             </DialogContent>
@@ -3982,5 +3972,3 @@ const WebhookTestDialog = () => {
 
 
 export default AppDashboard;
-
-    

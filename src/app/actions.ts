@@ -76,6 +76,6 @@ export async function sendToGroupWebhook(groupCode: string) {
     return postRequest(GROUP_WEBHOOK_URL, { groupCode });
 }
 
-export async function sendTestWebhook(phone: string, message: string, imageUrl: string) {
-    return postRequest(TEST_WEBHOOK_URL, { numero: phone, texto: message, imagem: imageUrl });
+export async function sendTestWebhook(phone: string, message: string, imageBase64: string) {
+    return postRequest(TEST_WEBHOOK_URL, { numero: phone, texto: message, imagem: imageBase64 });
 }
