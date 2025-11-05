@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, Code, Key } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, Code, Key, TestTube2, Image as ImageIcon } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -48,7 +48,7 @@ import {
     TableRow,
   } from "@/components/ui/table"
 import { Textarea } from './ui/textarea';
-import { sendMessage, getStatus, sendToGroupWebhook, sendGroupMessage } from '@/app/actions';
+import { sendMessage, getStatus, sendToGroupWebhook, sendGroupMessage, sendTestWebhook } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Loader } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from './ui/card';
@@ -66,6 +66,8 @@ import { Separator } from './ui/separator';
 import { Badge } from './ui/badge';
 import { useFirestore, useCollection, addDoc, updateDoc, deleteDoc, useMemoFirebase } from '@/firebase';
 import { collection, Timestamp, doc, writeBatch, query, orderBy, getDocs, where, limit } from 'firebase/firestore';
+import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL, UploadTask } from "firebase/storage";
+import { v4 as uuidv4 } from 'uuid';
 import { Switch } from './ui/switch';
 import {
     Collapsible,
@@ -75,6 +77,7 @@ import {
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { useSecurity } from './security-provider';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import { Progress } from './ui/progress';
 
 
 export type ClientStatus = 'ativo' | 'vencido' | 'cancelado';
@@ -672,6 +675,9 @@ const AppDashboard = () => {
                         />
                     </DialogContent>
                 </Dialog>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+                <WebhookTestDialog />
             </SidebarMenuItem>
             <SidebarMenuItem>
                 <Collapsible open={isSettingsMenuOpen} onOpenChange={setIsSettingsMenuOpen}>
@@ -3790,6 +3796,190 @@ const ApiPage = ({ apiKey }: { apiKey: ApiKey | undefined }) => {
         </div>
     )
 }
+
+const WebhookTestDialog = () => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [phone, setPhone] = useState('');
+    const [message, setMessage] = useState('');
+    const [imageFile, setImageFile] = useState<File | null>(null);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [isUploading, setIsUploading] = useState(false);
+    const [isSending, setIsSending] = useState(false);
+    const { user } = useSecurity();
+    const { toast } = useToast();
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            const file = e.target.files[0];
+            if (file.size > 5 * 1024 * 1024) { // 5MB limit
+                toast({
+                    variant: 'destructive',
+                    title: 'Arquivo muito grande',
+                    description: 'Por favor, selecione uma imagem menor que 5MB.',
+                });
+                return;
+            }
+            setImageFile(file);
+        }
+    };
+
+    const handleSendTest = async () => {
+        if (!phone || !message) {
+            toast({
+                variant: 'destructive',
+                title: 'Campos obrigatórios',
+                description: 'Por favor, preencha o número e a mensagem.',
+            });
+            return;
+        }
+
+        if (!user) {
+            toast({
+                variant: 'destructive',
+                title: 'Usuário não autenticado',
+                description: 'Por favor, faça login para testar o webhook.',
+            });
+            return;
+        }
+        
+        setIsSending(true);
+
+        try {
+            let imageUrl = '';
+            if (imageFile) {
+                setIsUploading(true);
+                setUploadProgress(0);
+
+                const storage = getStorage();
+                const imagePath = `webhook_tests/${user.uid}/${uuidv4()}-${imageFile.name}`;
+                const fileRef = storageRef(storage, imagePath);
+
+                const uploadTask = uploadBytesResumable(fileRef, imageFile);
+
+                await new Promise<string>((resolve, reject) => {
+                    uploadTask.on('state_changed',
+                        (snapshot) => {
+                            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                            setUploadProgress(progress);
+                        },
+                        (error) => {
+                            console.error("Upload failed:", error);
+                            reject(new Error('Falha no upload da imagem.'));
+                        },
+                        async () => {
+                            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                            resolve(downloadURL);
+                        }
+                    );
+                }).then(url => {
+                    imageUrl = url;
+                });
+                
+                setIsUploading(false);
+            }
+            
+            const result = await sendTestWebhook(phone, message, imageUrl);
+
+            if (result.error) {
+                throw new Error(result.error);
+            }
+            
+            toast({
+                title: 'Webhook de Teste Enviado!',
+                description: 'Os dados foram enviados para o seu webhook.',
+            });
+            setIsOpen(false);
+            setPhone('');
+            setMessage('');
+            setImageFile(null);
+            
+        } catch (error) {
+             toast({
+                variant: 'destructive',
+                title: 'Falha no Envio',
+                description: error instanceof Error ? error.message : 'Não foi possível enviar o teste.',
+            });
+        } finally {
+            setIsUploading(false);
+            setIsSending(false);
+            setUploadProgress(0);
+        }
+    };
+
+
+    return (
+        <Dialog open={isOpen} onOpenChange={setIsOpen}>
+            <DialogTrigger asChild>
+                <SidebarMenuButton>
+                    <TestTube2 /> Testar Webhook
+                </SidebarMenuButton>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Testar Webhook com Imagem</DialogTitle>
+                    <DialogDescription>
+                        Envie um número, uma mensagem e uma imagem para o seu webhook de teste. A imagem será enviada como um link.
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                        <Label htmlFor="test-phone">Número</Label>
+                        <Input
+                            id="test-phone"
+                            value={phone}
+                            onChange={(e) => setPhone(e.target.value)}
+                            placeholder="(00) 00000-0000"
+                        />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="test-message">Mensagem</Label>
+                        <Textarea
+                            id="test-message"
+                            value={message}
+                            onChange={(e) => setMessage(e.target.value)}
+                            placeholder="Sua mensagem de teste"
+                        />
+                    </div>
+                     <div className="grid gap-2">
+                        <Label htmlFor="test-image">Imagem (Opcional)</Label>
+                        <Input
+                            id="test-image"
+                            type="file"
+                            accept="image/*"
+                            ref={fileInputRef}
+                            onChange={handleFileChange}
+                            className="hidden"
+                        />
+                        <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+                            <ImageIcon className="mr-2 h-4 w-4" />
+                            {imageFile ? 'Trocar Imagem' : 'Selecionar Imagem'}
+                        </Button>
+                        {imageFile && (
+                            <div className="text-sm text-muted-foreground flex items-center gap-2">
+                                <span className="truncate">{imageFile.name}</span>
+                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setImageFile(null)}>
+                                    <XIcon className="h-4 w-4" />
+                                </Button>
+                            </div>
+                        )}
+                        {isUploading && <Progress value={uploadProgress} className="w-full h-2 mt-2" />}
+                    </div>
+                </div>
+                <DialogFooter>
+                    <DialogClose asChild>
+                        <Button variant="secondary" disabled={isUploading || isSending}>Cancelar</Button>
+                    </DialogClose>
+                    <Button onClick={handleSendTest} disabled={isUploading || isSending}>
+                        {(isUploading || isSending) && <Loader className="mr-2 h-4 w-4 animate-spin" />}
+                        {isUploading ? 'Enviando imagem...' : 'Enviar Teste'}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+};
+
 
 export default AppDashboard;
 

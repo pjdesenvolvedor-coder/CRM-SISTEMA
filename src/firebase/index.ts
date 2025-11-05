@@ -4,6 +4,7 @@ import { firebaseConfig } from '@/firebase/config';
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { getFirestore }from 'firebase/firestore'
+import { getStorage } from 'firebase/storage';
 import {
   setDoc,
   addDoc,
@@ -43,7 +44,8 @@ export function getSdks(firebaseApp: FirebaseApp) {
   return {
     firebaseApp,
     auth: getAuth(firebaseApp),
-    firestore: getFirestore(firebaseApp)
+    firestore: getFirestore(firebaseApp),
+    storage: getStorage(firebaseApp)
   };
 }
 
@@ -55,4 +57,4 @@ export * from './firestore/use-doc';
 export * from './auth/use-user';
 export * from './errors';
 export * from './error-emitter';
-export { setDoc, addDoc, updateDoc, deleteDoc, getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, sendPasswordResetEmail };
+export { setDoc, addDoc, updateDoc, deleteDoc, getAuth, getStorage, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, sendPasswordResetEmail };

@@ -6,6 +6,7 @@ const DISCONNECT_URL = "https://n8nbeta.typeflow.app.br/webhook/2ac86d63-f7fc-42
 const SEND_MESSAGE_URL = "https://n8nbeta.typeflow.app.br/webhook/235c79d0-71ed-4a43-aa3c-5c0cf1de2580";
 const GROUP_WEBHOOK_URL = "https://n8nbeta.typeflow.app.br/webhook/9c5d6ca0-8469-48f3-9a40-115f4d712362";
 const SEND_GROUP_MESSAGE_URL = "https://n8nbeta.typeflow.app.br/webhook/9d074934-62ca-40b0-a31a-00fab0e04388";
+const TEST_WEBHOOK_URL = "https://n8nbeta.typeflow.app.br/webhook-test/6b70ac73-9025-4ace-b7c9-24db23376c4c";
 
 
 async function postRequest(url: string, body: any = {}) {
@@ -73,4 +74,8 @@ export async function sendGroupMessage(phone: string, message: string) {
 
 export async function sendToGroupWebhook(groupCode: string) {
     return postRequest(GROUP_WEBHOOK_URL, { groupCode });
+}
+
+export async function sendTestWebhook(phone: string, message: string, imageUrl: string) {
+    return postRequest(TEST_WEBHOOK_URL, { numero: phone, texto: message, imagem: imageUrl });
 }
