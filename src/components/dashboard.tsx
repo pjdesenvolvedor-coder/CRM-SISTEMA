@@ -527,9 +527,9 @@ const AppDashboard = () => {
     
     const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading;
 
-    if (isLoading && !isTransitioningPage) {
+    if (isLoading) {
         return (
-            <div className="flex h-full min-h-screen w-full items-center justify-center">
+            <div className="flex h-screen w-full items-center justify-center">
                 <Loader className="h-12 w-12 animate-spin text-primary" />
             </div>
         )
@@ -3589,3 +3589,4 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
 export default AppDashboard;
 
     
+

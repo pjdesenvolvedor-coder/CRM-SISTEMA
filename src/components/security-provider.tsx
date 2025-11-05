@@ -35,28 +35,25 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user, isUserLoading, router, pathname]);
 
-  if (isUserLoading || (!user && !AUTH_ROUTES.includes(pathname))) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center">
-        <Loader className="h-12 w-12 animate-spin text-primary" />
-      </div>
-    );
+  // Don't render a loading screen here. The AppDashboard will handle it.
+  // This provider's main job is redirection.
+  if (isUserLoading && !AUTH_ROUTES.includes(pathname)) {
+      // While checking auth, if we are not on an auth route, we can show a loader,
+      // but AppDashboard's loader is better. Return null to avoid rendering anything until auth is resolved.
+      // Returning a loader here would cause a double loading screen.
+      return (
+        <div className="flex h-screen w-full items-center justify-center">
+            <Loader className="h-12 w-12 animate-spin text-primary" />
+        </div>
+      );
   }
-
-  // If user is loaded and on an auth route, or is logged in, render children
-  if ((!isUserLoading && AUTH_ROUTES.includes(pathname)) || user) {
-     return (
-        <AuthContext.Provider value={{ user, isLoading: isUserLoading, logout }}>
-            {children}
-        </AuthContext.Provider>
-    );
-  }
-
-  // Fallback loading state
+  
+  // Render children if we are on an auth page, or if the user is authenticated.
+  // The child (AppDashboard) will show its own loader for data fetching.
   return (
-    <div className="flex h-screen w-full items-center justify-center">
-        <Loader className="h-12 w-12 animate-spin text-primary" />
-    </div>
+      <AuthContext.Provider value={{ user, isLoading: isUserLoading, logout }}>
+          {children}
+      </AuthContext.Provider>
   );
 }
 
