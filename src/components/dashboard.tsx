@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, Code, Key } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -65,7 +65,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Separator } from './ui/separator';
 import { Badge } from './ui/badge';
 import { useFirestore, useCollection, addDoc, updateDoc, deleteDoc, useMemoFirebase } from '@/firebase';
-import { collection, Timestamp, doc, writeBatch, query, orderBy } from 'firebase/firestore';
+import { collection, Timestamp, doc, writeBatch, query, orderBy, getDocs, where, limit } from 'firebase/firestore';
 import { Switch } from './ui/switch';
 import {
     Collapsible,
@@ -74,6 +74,7 @@ import {
   } from "@/components/ui/collapsible"
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { useSecurity } from './security-provider';
+import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 
 
 export type ClientStatus = 'ativo' | 'vencido' | 'cancelado';
@@ -136,6 +137,13 @@ type ScheduledGroupMessage = {
     isRecurring: boolean;
 };
 
+type ApiKey = {
+    id: string;
+    key: string;
+    createdAt: Timestamp;
+    isEnabled: boolean;
+};
+
 const getClientStatus = (dueDate: Date | Timestamp | null): ClientStatus => {
     if (!dueDate) {
       return 'ativo'; // No due date means always active
@@ -174,8 +182,10 @@ const AppDashboard = () => {
 
     const messagingPaths = ['/automacao', '/automacao/remarketing', '/automacao/grupos'];
     const clientPaths = ['/clientes', '/clientes/suporte'];
+    const settingsPaths = ['/configuracoes', '/configuracoes/api'];
     const [isMessagingMenuOpen, setIsMessagingMenuOpen] = useState(messagingPaths.some(p => pathname.startsWith(p)));
     const [isClientMenuOpen, setIsClientMenuOpen] = useState(clientPaths.some(p => pathname.startsWith(p)));
+    const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(settingsPaths.some(p => pathname.startsWith(p)));
 
     useEffect(() => {
         const isCurrentPathInMessaging = messagingPaths.some(p => pathname.startsWith(p));
@@ -185,6 +195,10 @@ const AppDashboard = () => {
         const isCurrentPathInClients = clientPaths.some(p => pathname.startsWith(p));
         if(!isCurrentPathInClients) {
             setIsClientMenuOpen(false)
+        }
+        const isCurrentPathInSettings = settingsPaths.some(p => pathname.startsWith(p));
+        if(!isCurrentPathInSettings) {
+            setIsSettingsMenuOpen(false)
         }
     }, [pathname]);
 
@@ -287,6 +301,11 @@ const AppDashboard = () => {
 
     const scheduledMessagesQuery = useMemoFirebase(() => (firestore && userId) ? query(collection(firestore, 'users', userId, 'scheduledGroupMessages'), orderBy('sendAt', 'desc')) : null, [firestore, userId]);
     const { data: scheduledMessages, isLoading: scheduledMessagesLoading } = useCollection<ScheduledGroupMessage>(scheduledMessagesQuery);
+    
+    const apiKeysQuery = useMemoFirebase(() => (firestore && userId) ? query(collection(firestore, 'users', userId, 'apiKeys'), limit(1)) : null, [firestore, userId]);
+    const { data: apiKeys, isLoading: apiKeysLoading } = useCollection<ApiKey>(apiKeysQuery);
+    const apiKey = useMemo(() => apiKeys?.[0], [apiKeys]);
+
 
     const [supportClient, setSupportClient] = useState<Client | null>(null);
 
@@ -520,12 +539,14 @@ const AppDashboard = () => {
                 return <GroupsPage scheduledMessages={scheduledMessages ?? []} />;
             case '/configuracoes':
                 return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} />;
+            case '/configuracoes/api':
+                return <ApiPage apiKey={apiKey} />;
             default:
                 return <DashboardPage clients={transformedClients} rawClients={clients ?? []} />;
         }
     };
     
-    const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading;
+    const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading || apiKeysLoading;
 
     if (isLoading) {
         return (
@@ -534,6 +555,10 @@ const AppDashboard = () => {
             </div>
         )
     }
+
+    const userEmail = user?.email;
+    const userAvatar = user?.photoURL;
+    const userInitials = userEmail ? userEmail.charAt(0).toUpperCase() : 'U';
 
 
   return (
@@ -649,22 +674,61 @@ const AppDashboard = () => {
                 </Dialog>
             </SidebarMenuItem>
             <SidebarMenuItem>
-                <Link href="/configuracoes" onClick={(e) => { e.preventDefault(); startTransition(() => { window.history.pushState(null, '', '/configuracoes'); }); }}>
-                    <SidebarMenuButton isActive={pathname === '/configuracoes'}>
-                        <Settings/> Configurações
-                    </SidebarMenuButton>
-                </Link>
+                <Collapsible open={isSettingsMenuOpen} onOpenChange={setIsSettingsMenuOpen}>
+                        <CollapsibleTrigger asChild>
+                            <SidebarMenuButton isActive={pathname.startsWith('/configuracoes')} className="w-full justify-start">
+                                <Settings />
+                                <span className="flex-1">Configurações</span>
+                                <ChevronDown className={cn("h-4 w-4 transition-transform", isSettingsMenuOpen && "rotate-180")} />
+                            </SidebarMenuButton>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                            <div className="pl-8 py-2 flex flex-col gap-2">
+                                <Link href="/configuracoes" onClick={(e) => { e.preventDefault(); startTransition(() => { window.history.pushState(null, '', '/configuracoes'); }); }}>
+                                    <SidebarMenuButton variant="ghost" className="w-full justify-start" isActive={pathname === '/configuracoes'}>
+                                        Planos e Assinaturas
+                                    </SidebarMenuButton>
+                                </Link>
+                                <Link href="/configuracoes/api" onClick={(e) => { e.preventDefault(); startTransition(() => { window.history.pushState(null, '', '/configuracoes/api'); }); }}>
+                                    <SidebarMenuButton variant="ghost" className="w-full justify-start" isActive={pathname === '/configuracoes/api'}>
+                                        API
+                                    </SidebarMenuButton>
+                                </Link>
+                            </div>
+                        </CollapsibleContent>
+                    </Collapsible>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarContent>
         <SidebarFooter>
-            <SidebarMenu>
-                <SidebarMenuItem>
-                    <SidebarMenuButton onClick={logout}>
-                        <LogOut /> Sair
-                    </SidebarMenuButton>
-                </SidebarMenuItem>
-            </SidebarMenu>
+             <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" className="flex items-center justify-start gap-3 w-full h-auto p-2">
+                        <Avatar className="h-8 w-8">
+                            <AvatarImage src={userAvatar ?? undefined} />
+                            <AvatarFallback>{userInitials}</AvatarFallback>
+                        </Avatar>
+                        <div className="flex flex-col items-start text-left">
+                            <span className="text-sm font-medium leading-none truncate max-w-[120px]">{userEmail}</span>
+                        </div>
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-56 mb-2" align="end" forceMount>
+                    <DropdownMenuLabel className="font-normal">
+                        <div className="flex flex-col space-y-1">
+                            <p className="text-sm font-medium leading-none">Minha Conta</p>
+                            <p className="text-xs leading-none text-muted-foreground truncate">
+                                {userEmail}
+                            </p>
+                        </div>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={logout}>
+                        <LogOut className="mr-2 h-4 w-4" />
+                        <span>Sair</span>
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
         </SidebarFooter>
       </Sidebar>
       <SidebarInset className={cn("flex min-h-screen w-full flex-col bg-background", isTransitioningPage && "opacity-50 transition-opacity")}>
@@ -1831,18 +1895,18 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
     return (
         <div className="w-full space-y-6">
             <div className="text-center sm:text-left">
-                <h2 className="text-2xl font-bold">Configurações</h2>
-                <p className="text-muted-foreground">Gerencie suas assinaturas e outras configurações.</p>
+                <h2 className="text-2xl font-bold">Planos e Assinaturas</h2>
+                <p className="text-muted-foreground">Gerencie seus planos e outras configurações.</p>
             </div>
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Adicionar Nova Assinatura</CardTitle>
+                    <CardTitle>Adicionar Novo Plano</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <div className="flex flex-col sm:flex-row gap-2">
                         <Input
-                            placeholder="Nome da Assinatura"
+                            placeholder="Nome do Plano"
                             value={newSubscriptionName}
                             onChange={(e) => setNewSubscriptionName(e.target.value)}
                             className="sm:w-1/2"
@@ -1865,7 +1929,7 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
                 <Table>
                     <TableHeader>
                         <TableRow>
-                            <TableHead>Assinatura</TableHead>
+                            <TableHead>Plano</TableHead>
                             <TableHead>Preço</TableHead>
                             <TableHead className="text-right w-[100px]">Ações</TableHead>
                         </TableRow>
@@ -1902,7 +1966,7 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
                                                         <AlertDialogHeader>
                                                             <AlertDialogTitle>Você tem certeza?</AlertDialogTitle>
                                                             <AlertDialogDescription>
-                                                                Essa ação não pode ser desfeita. Isso excluirá permanentemente a assinatura.
+                                                                Essa ação não pode ser desfeita. Isso excluirá permanentemente o plano.
                                                             </AlertDialogDescription>
                                                         </AlertDialogHeader>
                                                         <AlertDialogFooter>
@@ -1919,7 +1983,7 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
                         ) : (
                             <TableRow>
                                 <TableCell colSpan={3} className="h-24 text-center">
-                                    Nenhuma assinatura criada ainda.
+                                    Nenhum plano criado ainda.
                                 </TableCell>
                             </TableRow>
                         )}
@@ -1979,9 +2043,9 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
             <Dialog open={!!editingSubscription} onOpenChange={(isOpen) => !isOpen && setEditingSubscription(null)}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                        <DialogTitle>Editar Assinatura</DialogTitle>
+                        <DialogTitle>Editar Plano</DialogTitle>
                         <DialogDescription>
-                            Altere os detalhes da sua assinatura abaixo.
+                            Altere os detalhes do seu plano abaixo.
                         </DialogDescription>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
@@ -3586,7 +3650,145 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
     );
 }
 
-export default AppDashboard;
+const ApiPage = ({ apiKey }: { apiKey: ApiKey | undefined }) => {
+    const firestore = useFirestore();
+    const { user } = useSecurity();
+    const userId = user?.uid;
+    const { toast } = useToast();
+    const [isPending, startTransition] = useTransition();
 
+    const generateApiKey = () => {
+        if (!firestore || !userId) return;
+
+        startTransition(async () => {
+            // For simplicity, we'll allow only one key per user.
+            // Check if a key already exists.
+            const apiKeysCol = collection(firestore, 'users', userId, 'apiKeys');
+            const existingKeysSnapshot = await getDocs(query(apiKeysCol, limit(1)));
+            
+            if (!existingKeysSnapshot.empty) {
+                toast({
+                    variant: 'destructive',
+                    title: 'Chave já existente',
+                    description: 'Você já possui uma chave de API. Regenere-a se desejar uma nova.',
+                });
+                return;
+            }
+
+            const newKey = `zapconnect_${[...Array(32)].map(() => Math.random().toString(36)[2]).join('')}`;
+            const newApiKey: Omit<ApiKey, 'id'> = {
+                key: newKey,
+                createdAt: Timestamp.now(),
+                isEnabled: true,
+            };
+            addDoc(apiKeysCol, newApiKey);
+            toast({ title: 'Chave de API Gerada!', description: 'Sua nova chave de API foi criada com sucesso.' });
+        });
+    };
+
+    const regenerateApiKey = () => {
+        if (!firestore || !userId || !apiKey) return;
+        startTransition(() => {
+            const newKey = `zapconnect_${[...Array(32)].map(() => Math.random().toString(36)[2]).join('')}`;
+            const keyDoc = doc(firestore, 'users', userId, 'apiKeys', apiKey.id);
+            updateDoc(keyDoc, { key: newKey, createdAt: Timestamp.now() });
+            toast({ title: 'Chave de API Regenerada!', description: 'Sua chave de API foi atualizada.' });
+        });
+    };
+
+    const handleCopy = (text: string) => {
+        navigator.clipboard.writeText(text).then(() => {
+            toast({ title: 'Copiado!', description: 'O texto foi copiado para a área de transferência.' });
+        });
+    };
     
+    const exampleBody = {
+        name: "Nome do Cliente",
+        phone: "5511999998888",
+        emails: ["cliente@example.com"],
+        subscription: "Plano Teste",
+        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
+        amountPaid: 49.90,
+        isResale: false,
+        notes: "Cliente adicionado via API"
+      };
 
+    return (
+        <div className="w-full space-y-8">
+            <div>
+                <h2 className="text-2xl font-bold">Documentação da API</h2>
+                <p className="text-muted-foreground">Integre seu sistema com o ZapConnect para criar clientes programaticamente.</p>
+            </div>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2"><Key className="h-5 w-5" /> Sua Chave de API</CardTitle>
+                    <CardDescription>
+                        Esta chave é necessária para autenticar suas requisições na API. Mantenha-a segura.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {apiKey ? (
+                        <div className="flex items-center justify-between gap-4 p-3 bg-muted rounded-md">
+                            <span className="text-sm font-mono break-all">{apiKey.key}</span>
+                            <Button variant="ghost" size="icon" onClick={() => handleCopy(apiKey.key)}>
+                                <Copy className="h-4 w-4" />
+                            </Button>
+                       </div>
+                    ) : (
+                        <p className="text-sm text-muted-foreground">Você ainda não gerou uma chave de API.</p>
+                    )}
+                </CardContent>
+                <CardFooter>
+                    <Button onClick={apiKey ? regenerateApiKey : generateApiKey} disabled={isPending}>
+                        {isPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
+                        {apiKey ? 'Regenerar Chave' : 'Gerar Chave de API'}
+                    </Button>
+                </CardFooter>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2"><Code className="h-5 w-5" /> Endpoint de Criação de Cliente</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div>
+                        <Label>Método</Label>
+                        <div className='flex items-center gap-2'>
+                             <Badge variant="secondary">POST</Badge>
+                        </div>
+                    </div>
+                     <div>
+                        <Label>URL do Endpoint</Label>
+                         <div className="flex items-center justify-between gap-4 p-3 bg-muted rounded-md">
+                            <code className="text-sm break-all">/api/clients</code>
+                            <Button variant="ghost" size="icon" onClick={() => handleCopy('/api/clients')}>
+                                <Copy className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    </div>
+                     <div>
+                        <Label>Headers</Label>
+                        <div className="p-3 bg-muted rounded-md text-sm font-mono">
+                           <p>Content-Type: application/json</p>
+                           <p>Authorization: Bearer <span className='text-muted-foreground'>&#123;sua_chave_de_api&#125;</span></p>
+                        </div>
+                    </div>
+                    <div>
+                        <Label>Exemplo de Corpo da Requisição (JSON)</Label>
+                        <div className="relative">
+                            <pre className="p-4 bg-muted rounded-md text-sm overflow-x-auto font-mono">
+                                {JSON.stringify(exampleBody, null, 2)}
+                            </pre>
+                            <Button variant="ghost" size="icon" className='absolute top-2 right-2' onClick={() => handleCopy(JSON.stringify(exampleBody, null, 2))}>
+                                <Copy className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+        </div>
+    )
+}
+
+export default AppDashboard;
