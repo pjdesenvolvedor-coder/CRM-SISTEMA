@@ -48,7 +48,7 @@ import {
     TableRow,
   } from "@/components/ui/table"
 import { Textarea } from './ui/textarea';
-import { sendMessage, getStatus, sendToGroupWebhook, sendGroupMessage, sendTestWebhook, sendScheduledGroupMessageWithImage } from '@/app/actions';
+import { sendMessage, getStatus, sendToGroupWebhook, sendGroupMessage, sendScheduledGroupMessageWithImage } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Loader } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from './ui/card';
@@ -680,9 +680,6 @@ const AppDashboard = () => {
                 </Dialog>
             </SidebarMenuItem>
             <SidebarMenuItem>
-                <WebhookTestDialog />
-            </SidebarMenuItem>
-            <SidebarMenuItem>
                 <Collapsible open={isSettingsMenuOpen} onOpenChange={setIsSettingsMenuOpen}>
                         <CollapsibleTrigger asChild>
                             <SidebarMenuButton isActive={pathname.startsWith('/configuracoes')} className="w-full justify-start">
@@ -1109,12 +1106,22 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport }: { 
     const filteredClients = useMemo(() => {
         if (!searchTerm) return clients;
         const lowercasedFilter = searchTerm.toLowerCase();
-        return clients.filter(client => 
-            client.name.toLowerCase().includes(lowercasedFilter) ||
-            client.emails.some(email => email.toLowerCase().includes(lowercasedFilter)) ||
-            client.status.toLowerCase().includes(lowercasedFilter) ||
-            client.subscription.toLowerCase().includes(lowercasedFilter)
-        );
+        
+        const searchInAllFields = (client: Client, term: string): boolean => {
+            // Checks all string or number fields.
+            // For array fields like 'emails', it checks each element.
+            return Object.values(client).some(value => {
+                if (typeof value === 'string' || typeof value === 'number') {
+                    return String(value).toLowerCase().includes(term);
+                }
+                if (Array.isArray(value) && value.every(item => typeof item === 'string')) {
+                    return value.some(item => item.toLowerCase().includes(term));
+                }
+                return false;
+            });
+        };
+
+        return clients.filter(client => searchInAllFields(client, lowercasedFilter));
     }, [clients, searchTerm]);
 
     const sortedClients = useMemo(() => {
@@ -1219,7 +1226,7 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport }: { 
           <div className='flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto'>
             <div className='w-full sm:w-auto flex-grow max-w-sm relative'>
                 <Input 
-                    placeholder="Pesquisar por nome, email, status..."
+                    placeholder="Pesquisar em todos os campos..."
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={handleKeyDown}
@@ -3879,180 +3886,5 @@ const ApiPage = ({ apiKey }: { apiKey: ApiKey | undefined }) => {
         </div>
     )
 }
-
-const WebhookTestDialog = () => {
-    const [isOpen, setIsOpen] = useState(false);
-    const [phone, setPhone] = useState('');
-    const [message, setMessage] = useState('');
-    const [imageFile, setImageFile] = useState<File | null>(null);
-    const [imageBase64, setImageBase64] = useState('');
-    const [isConverting, setIsConverting] = useState(false);
-    const [isSending, setIsSending] = useState(false);
-    const { toast } = useToast();
-    const fileInputRef = useRef<HTMLInputElement>(null);
-
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            const file = e.target.files[0];
-            if (file.size > 5 * 1024 * 1024) { // 5MB limit
-                toast({
-                    variant: 'destructive',
-                    title: 'Arquivo muito grande',
-                    description: 'Por favor, selecione uma imagem menor que 5MB.',
-                });
-                return;
-            }
-            setImageFile(file);
-            
-            setIsConverting(true);
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = () => {
-                setImageBase64(reader.result as string);
-                setIsConverting(false);
-            };
-            reader.onerror = (error) => {
-                console.error("Error converting file to Base64:", error);
-                toast({
-                    variant: 'destructive',
-                    title: 'Erro na conversão',
-                    description: 'Não foi possível converter a imagem para Base64.',
-                });
-                setIsConverting(false);
-            };
-        }
-    };
-
-    const clearImage = () => {
-        setImageFile(null);
-        setImageBase64('');
-        if(fileInputRef.current) {
-            fileInputRef.current.value = '';
-        }
-    }
-
-    const handleSendTest = async () => {
-        if (!phone || !message) {
-            toast({
-                variant: 'destructive',
-                title: 'Campos obrigatórios',
-                description: 'Por favor, preencha o número e a mensagem.',
-            });
-            return;
-        }
-
-        setIsSending(true);
-
-        try {
-            const result = await sendTestWebhook(phone, message, imageBase64);
-
-            if (result.error) {
-                throw new Error(result.error);
-            }
-            
-            toast({
-                title: 'Webhook de Teste Enviado!',
-                description: 'Os dados foram enviados para o seu webhook.',
-            });
-            setIsOpen(false);
-            setPhone('');
-            setMessage('');
-            clearImage();
-            
-        } catch (error) {
-             toast({
-                variant: 'destructive',
-                title: 'Falha no Envio',
-                description: error instanceof Error ? error.message : 'Não foi possível enviar o teste.',
-            });
-        } finally {
-            setIsSending(false);
-        }
-    };
-
-    const isActionPending = isConverting || isSending;
-
-    return (
-        <Dialog open={isOpen} onOpenChange={(open) => {
-            if (!open) {
-                setPhone('');
-                setMessage('');
-                clearImage();
-            }
-            setIsOpen(open);
-        }}>
-            <DialogTrigger asChild>
-                <SidebarMenuButton>
-                    <TestTube2 /> Testar Webhook
-                </SidebarMenuButton>
-            </DialogTrigger>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>Testar Webhook com Imagem</DialogTitle>
-                    <DialogDescription>
-                        Envie um número, uma mensagem e uma imagem (opcional) para o seu webhook de teste. A imagem será enviada como Base64.
-                    </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                    <div className="grid gap-2">
-                        <Label htmlFor="test-phone">Número</Label>
-                        <Input
-                            id="test-phone"
-                            value={phone}
-                            onChange={(e) => setPhone(e.target.value)}
-                            placeholder="(00) 00000-0000"
-                            disabled={isActionPending}
-                        />
-                    </div>
-                    <div className="grid gap-2">
-                        <Label htmlFor="test-message">Mensagem</Label>
-                        <Textarea
-                            id="test-message"
-                            value={message}
-                            onChange={(e) => setMessage(e.target.value)}
-                            placeholder="Sua mensagem de teste"
-                             disabled={isActionPending}
-                        />
-                    </div>
-                     <div className="grid gap-2">
-                        <Label htmlFor="test-image">Imagem (Opcional)</Label>
-                        <Input
-                            id="test-image"
-                            type="file"
-                            accept="image/*"
-                            ref={fileInputRef}
-                            onChange={handleFileChange}
-                            className="hidden"
-                            disabled={isActionPending}
-                        />
-                        <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isActionPending}>
-                            <ImageIcon className="mr-2 h-4 w-4" />
-                            {imageFile ? 'Trocar Imagem' : 'Selecionar Imagem'}
-                        </Button>
-                        {imageFile && (
-                            <div className="text-sm text-muted-foreground flex items-center gap-2">
-                                <span className="truncate">{imageFile.name}</span>
-                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={clearImage} disabled={isActionPending}>
-                                    <XIcon className="h-4 w-4" />
-                                </Button>
-                            </div>
-                        )}
-                        {isConverting && <Progress value={100} className="w-full h-2 mt-2 animate-pulse" />}
-                    </div>
-                </div>
-                <DialogFooter>
-                    <DialogClose asChild>
-                        <Button variant="secondary" disabled={isActionPending}>Cancelar</Button>
-                    </DialogClose>
-                    <Button onClick={handleSendTest} disabled={isActionPending}>
-                        {isActionPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
-                        {isConverting ? 'Convertendo...' : isSending ? 'Enviando...' : 'Enviar Teste'}
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
-    );
-};
-
 
 export default AppDashboard;
