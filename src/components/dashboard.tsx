@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, Code, Key, TestTube2, Image as ImageIcon } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, Code, Key } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -1881,6 +1881,7 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
     const { toast } = useToast();
     const [isPending, startTransition] = useTransition();
     const [confirmationText, setConfirmationText] = useState('');
+    const subsFileInputRef = useRef<HTMLInputElement>(null);
 
     const handleAddSubscription = () => {
       if (newSubscriptionName.trim() && newSubscriptionPrice && firestore && userId) {
@@ -1962,6 +1963,84 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
         });
     };
 
+    const handleExportSubscriptions = () => {
+        if (!subscriptions || subscriptions.length === 0) {
+            toast({
+                variant: 'destructive',
+                title: 'Nenhum plano para exportar',
+                description: 'Não há planos na lista para serem exportados.',
+            });
+            return;
+        }
+    
+        const dataToExport = subscriptions.map(({ id, ...rest }) => rest);
+    
+        const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(
+            JSON.stringify(dataToExport, null, 2)
+        )}`;
+        const link = document.createElement('a');
+        link.href = jsonString;
+        link.download = `planos-backup-${new Date().toISOString().split('T')[0]}.json`;
+        link.click();
+    
+        toast({
+            title: 'Exportação Concluída',
+            description: `${subscriptions.length} planos foram exportados com sucesso.`,
+        });
+    };
+    
+    const handleImportSubscriptions = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file || !firestore || !userId) {
+            return;
+        }
+    
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const content = e.target?.result;
+                if (typeof content !== 'string') {
+                    throw new Error('Conteúdo do arquivo inválido.');
+                }
+                const importedSubs = JSON.parse(content);
+    
+                if (!Array.isArray(importedSubs)) {
+                    throw new Error('O arquivo JSON deve conter um array de planos.');
+                }
+    
+                const batch = writeBatch(firestore);
+                const subsCol = collection(firestore, 'users', userId, 'subscriptions');
+    
+                importedSubs.forEach(subData => {
+                    // Simple validation
+                    if (subData.name && typeof subData.price === 'number') {
+                        const newDocRef = doc(subsCol);
+                        batch.set(newDocRef, { name: subData.name, price: subData.price });
+                    }
+                });
+    
+                await batch.commit();
+    
+                toast({
+                    title: 'Importação Concluída!',
+                    description: `${importedSubs.length} planos foram importados com sucesso.`,
+                });
+            } catch (error) {
+                console.error("Error importing subscriptions:", error);
+                toast({
+                    variant: 'destructive',
+                    title: 'Erro na Importação',
+                    description: error instanceof Error ? error.message : 'Não foi possível importar os planos. Verifique o formato do arquivo.',
+                });
+            } finally {
+                if (subsFileInputRef.current) {
+                    subsFileInputRef.current.value = '';
+                }
+            }
+        };
+        reader.readAsText(file);
+    };
+
     return (
         <div className="w-full space-y-6">
             <div className="text-center sm:text-left">
@@ -1996,10 +2075,38 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
             </Card>
 
             <div className="border rounded-lg overflow-x-auto">
+                <input
+                    type="file"
+                    ref={subsFileInputRef}
+                    onChange={handleImportSubscriptions}
+                    accept=".json"
+                    className="hidden"
+                />
                 <Table>
                     <TableHeader>
                         <TableRow>
-                            <TableHead>Plano</TableHead>
+                            <TableHead className='flex-1'>
+                                <div className="flex items-center justify-between">
+                                    <span>Planos</span>
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button variant="ghost" size="icon" className='-mr-2'>
+                                                <MoreHorizontal className="h-4 w-4" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                            <DropdownMenuItem onClick={() => subsFileInputRef.current?.click()}>
+                                                <Upload className="mr-2 h-4 w-4" />
+                                                Importar Planos
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={handleExportSubscriptions}>
+                                                <Download className="mr-2 h-4 w-4" />
+                                                Exportar Planos
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </div>
+                            </TableHead>
                             <TableHead>Preço</TableHead>
                             <TableHead className="text-right w-[100px]">Ações</TableHead>
                         </TableRow>
@@ -3742,7 +3849,7 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
                             disabled={isActionPending}
                         />
                         <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isActionPending}>
-                            <ImageIcon className="mr-2 h-4 w-4" />
+                            <Upload className="mr-2 h-4 w-4" />
                             {(imageFile || imageBase64) ? 'Trocar Imagem' : 'Selecionar Imagem'}
                         </Button>
                         {(imageFile || imageBase64) && (
