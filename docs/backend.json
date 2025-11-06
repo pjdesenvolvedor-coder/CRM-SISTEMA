@@ -12,6 +12,7 @@
       "description": "Represents a client in the system.",
       "properties": {
         "name": { "type": "string", "description": "Client's full name." },
+        "telegramUser": { "type": "string", "description": "Client's Telegram username." },
         "phone": { "type": "string", "description": "Client's phone number." },
         "emails": { "type": "array", "items": { "type": "string", "format": "email" } },
         "notes": { "type": "string", "description": "Additional notes about the client." },
@@ -20,6 +21,7 @@
         "paymentMethod": { "type": "string", "enum": ["pix", "cartao", "boleto"], "description": "Method of payment." },
         "amountPaid": { "type": "number", "description": "Amount paid by the client." },
         "isResale": { "type": "boolean", "description": "Indicates if the client is a reseller." },
+        "isPackage": { "type": "boolean", "description": "Indicates if the client is a package deal." },
         "quantity": { "type": "number", "description": "Number of accounts for resale clients." },
         "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when the client was added to the system." },
         "lastNotificationSent": { "type": "string", "format": "date-time", "description": "Timestamp of the last automated due date notification sent." },

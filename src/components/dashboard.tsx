@@ -84,6 +84,7 @@ export type ClientStatus = 'ativo' | 'vencido' | 'cancelado';
 export type Client = {
     id: string;
     name: string;
+    telegramUser?: string;
     phone: string;
     emails: string[];
     notes: string;
@@ -94,6 +95,7 @@ export type Client = {
     paymentMethod: 'pix' | 'cartao' | 'boleto' | null;
     amountPaid: number | null;
     isResale: boolean;
+    isPackage?: boolean;
     quantity: number;
     lastNotificationSent?: Date | Timestamp | null;
     lastReminderSent?: Date | Timestamp | null;
@@ -457,7 +459,7 @@ const AppDashboard = () => {
     const handleToggleSupport = useMemo(() => (client: Client) => {
         if (!firestore || !userId) return;
         
-        if (client.isResale) {
+        if (client.isResale || client.isPackage) {
             setSupportClient(client);
         } else {
             const clientDoc = doc(firestore, 'users', userId, 'clients', client.id);
@@ -1322,7 +1324,9 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport }: { 
                                 <TableRow key={client.id}>
                                     <TableCell className="font-medium">
                                         <div className="flex items-center gap-2">
-                                            {client.isResale ? (
+                                            {client.isPackage ? (
+                                                <Users className="h-5 w-5 text-green-500 flex-shrink-0" />
+                                            ) : client.isResale ? (
                                                 <Users className="h-5 w-5 text-red-500 flex-shrink-0" />
                                             ) : (
                                                 <User className="h-5 w-5 text-yellow-400 flex-shrink-0" />
@@ -1421,8 +1425,16 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport }: { 
     );
 };
 
+type FormErrors = {
+    name?: boolean;
+    phone?: boolean;
+    emails?: boolean;
+    subscription?: boolean;
+}
+
 const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subscriptions, trigger }: { isOpen: boolean, onOpenChange: (isOpen: boolean) => void, clientToEdit?: Client, onSave: (client: any) => void, subscriptions: Subscription[], trigger?: React.ReactNode }) => {
     const [name, setName] = useState('');
+    const [telegramUser, setTelegramUser] = useState('');
     const [phone, setPhone] = useState('');
     const [emails, setEmails] = useState(['']);
     const [notes, setNotes] = useState('');
@@ -1434,12 +1446,16 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
     const [amountPaid, setAmountPaid] = useState<number | string>('');
     const [amountPaidDisplay, setAmountPaidDisplay] = useState('');
     const [isResale, setIsResale] = useState(false);
-    
+    const [isPackage, setIsPackage] = useState(false);
+    const [formErrors, setFormErrors] = useState<FormErrors>({});
+
+    const { toast } = useToast();
     const emailScrollAreaRef = useRef<HTMLDivElement>(null);
     const isEditMode = !!clientToEdit;
 
     const resetForm = () => {
         setName('');
+        setTelegramUser('');
         setPhone('');
         setEmails(['']);
         setNotes('');
@@ -1451,6 +1467,8 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
         setAmountPaid('');
         setAmountPaidDisplay('');
         setIsResale(false);
+        setIsPackage(false);
+        setFormErrors({});
     };
 
     const updateDueDate = (date: Date | null, time: {hour: string, minute: string}) => {
@@ -1487,6 +1505,7 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
     useEffect(() => {
         if (clientToEdit) {
             setName(clientToEdit.name);
+            setTelegramUser(clientToEdit.telegramUser || '');
             setPhone(clientToEdit.phone);
             setEmails(clientToEdit.emails.length > 0 ? clientToEdit.emails : ['']);
             setNotes(clientToEdit.notes);
@@ -1505,6 +1524,7 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
             setAmountPaid(clientToEdit.amountPaid ?? '');
             setAmountPaidDisplay(clientToEdit.amountPaid ? clientToEdit.amountPaid.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '');
             setIsResale(clientToEdit.isResale);
+            setIsPackage(clientToEdit.isPackage ?? false);
         } else {
             resetForm();
             const now = new Date();
@@ -1515,13 +1535,31 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
         }
     }, [clientToEdit, isOpen]);
 
-    const quantity = isResale ? emails.filter(e => e.trim() !== '').length : 1;
+    const showMultipleEmails = isResale || isPackage;
+    const quantity = showMultipleEmails ? emails.filter(e => e.trim() !== '').length : 1;
 
     const handleSaveClient = () => {
         const finalEmails = emails.filter(e => e.trim() !== '');
-      if (name && phone && subscription && finalEmails.length > 0) {
+        const errors: FormErrors = {};
+        if (!name) errors.name = true;
+        if (!phone) errors.phone = true;
+        if (finalEmails.length === 0) errors.emails = true;
+        if (!subscription) errors.subscription = true;
+        
+        setFormErrors(errors);
+
+        if (Object.keys(errors).length > 0) {
+            toast({
+                variant: 'destructive',
+                title: 'Campos Obrigatórios',
+                description: 'Por favor, preencha todos os campos marcados em vermelho.',
+            });
+            return;
+        }
+
         const clientData = { 
             name, 
+            telegramUser,
             phone, 
             emails: finalEmails, 
             notes, 
@@ -1530,6 +1568,7 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
             paymentMethod,
             amountPaid: typeof amountPaid === 'string' ? parseFloat(amountPaid) : amountPaid,
             isResale,
+            isPackage,
             quantity
         };
         
@@ -1539,7 +1578,6 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
             onSave(clientData);
         }
         onOpenChange(false);
-      }
     };
     
     useEffect(() => {
@@ -1583,8 +1621,9 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
     };
     
     const handleSubscriptionChange = (subName: string) => {
-        const currentQuantity = isResale ? Math.max(1, emails.filter(e => e.trim() !== '').length) : 1;
+        const currentQuantity = showMultipleEmails ? Math.max(1, emails.filter(e => e.trim() !== '').length) : 1;
         updatePrice(subName, currentQuantity);
+        if (subName) setFormErrors(prev => ({...prev, subscription: false}));
     }
 
     const handleAmountPaidChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1610,7 +1649,16 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
     
     const handleResaleChange = (checked: boolean) => {
         setIsResale(checked);
-        if (!checked) {
+        if (checked) setIsPackage(false);
+        if (!checked && !isPackage) {
+            setEmails(emails.length > 1 ? [emails[0]] : emails);
+        }
+    };
+    
+    const handlePackageChange = (checked: boolean) => {
+        setIsPackage(checked);
+        if (checked) setIsResale(false);
+        if (!checked && !isResale) {
             setEmails(emails.length > 1 ? [emails[0]] : emails);
         }
     };
@@ -1636,41 +1684,47 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
                     <TabsContent value="data">
                         <div className="grid gap-4 py-4">
                             <div className="grid grid-cols-4 items-center gap-4">
-                                <Label htmlFor="name" className="text-right">Nome</Label>
-                                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} className="col-span-3" placeholder="Nome do Cliente"/>
+                                <Label htmlFor="name" className={cn("text-right", formErrors.name && "text-destructive")}>Nome *</Label>
+                                <Input id="name" value={name} onChange={(e) => {setName(e.target.value); if(e.target.value) setFormErrors(p => ({...p, name: false}))}} className="col-span-3" placeholder="Nome do Cliente" data-error={formErrors.name}/>
                             </div>
                             <div className="grid grid-cols-4 items-center gap-4">
-                                <Label htmlFor="phone" className="text-right">Número</Label>
-                                <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} className="col-span-3" placeholder="(00) 00000-0000"/>
+                                <Label htmlFor="telegramUser" className="text-right">Usuário Telegram</Label>
+                                <Input id="telegramUser" value={telegramUser} onChange={(e) => setTelegramUser(e.target.value)} className="col-span-3" placeholder="@usuario_telegram (opcional)"/>
+                            </div>
+                            <div className="grid grid-cols-4 items-center gap-4">
+                                <Label htmlFor="phone" className={cn("text-right", formErrors.phone && "text-destructive")}>Número *</Label>
+                                <Input id="phone" value={phone} onChange={(e) => {setPhone(e.target.value); if(e.target.value) setFormErrors(p => ({...p, phone: false}))}} className="col-span-3" placeholder="(00) 00000-0000" data-error={formErrors.phone}/>
                             </div>
                             <div className="grid grid-cols-4 items-center gap-4">
                                 <div/>
-                                <div className="col-span-3 flex items-center space-x-2">
-                                    <Checkbox id="resale" checked={isResale} onCheckedChange={(checked) => handleResaleChange(checked as boolean)} />
-                                    <label
-                                        htmlFor="resale"
-                                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                                    >
-                                        REVENDA CONTA
-                                    </label>
+                                <div className="col-span-3 flex items-center space-x-4">
+                                    <div className="flex items-center space-x-2">
+                                        <Checkbox id="package" checked={isPackage} onCheckedChange={(checked) => handlePackageChange(checked as boolean)} />
+                                        <label htmlFor="package" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">PACOTE</label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <Checkbox id="resale" checked={isResale} onCheckedChange={(checked) => handleResaleChange(checked as boolean)} />
+                                        <label htmlFor="resale" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">REVENDA</label>
+                                    </div>
                                 </div>
                             </div>
-                            <ScrollArea className="h-auto max-h-[240px] pr-4" viewportRef={emailScrollAreaRef}>
+                            <ScrollArea className="h-auto max-h-[200px] pr-4" viewportRef={emailScrollAreaRef}>
                                <div className="space-y-4">
                                     {emails.map((email, index) => (
                                         <div className="grid grid-cols-4 items-center gap-4" key={index}>
-                                            <Label htmlFor={`email-${index}`} className="text-right">
-                                                Email {isResale ? index + 1 : ''}
+                                            <Label htmlFor={`email-${index}`} className={cn("text-right", formErrors.emails && "text-destructive")}>
+                                                Email {showMultipleEmails ? index + 1 : ''} *
                                             </Label>
                                             <div className='col-span-3 flex items-center gap-2'>
                                                 <Input
                                                     id={`email-${index}`}
                                                     type="email"
                                                     value={email}
-                                                    onChange={(e) => handleEmailChange(index, e.target.value)}
+                                                    onChange={(e) => {handleEmailChange(index, e.target.value); if(e.target.value) setFormErrors(p => ({...p, emails: false}))}}
                                                     placeholder="email@exemplo.com"
+                                                    data-error={formErrors.emails && !emails.some(e => e.trim() !== '')}
                                                 />
-                                                {isResale && emails.length > 1 && (
+                                                {showMultipleEmails && emails.length > 1 && (
                                                     <Button variant="ghost" size="icon" onClick={() => removeEmailField(index)}>
                                                         <Trash className="h-4 w-4 text-destructive" />
                                                     </Button>
@@ -1680,7 +1734,7 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
                                     ))}
                                 </div>
                             </ScrollArea>
-                            {isResale && (
+                            {showMultipleEmails && (
                                 <div className="grid grid-cols-4 items-center gap-4 mt-2">
                                     <div/>
                                     <div className='col-span-3'>
@@ -1753,7 +1807,7 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
                     </TabsContent>
                     <TabsContent value="pagamento">
                         <div className="grid gap-4 py-4">
-                            {isResale && (
+                            {showMultipleEmails && (
                                 <div className="grid grid-cols-4 items-center gap-4">
                                     <Label htmlFor="quantity" className="text-right">Quantidade</Label>
                                     <Input
@@ -1767,9 +1821,9 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
                                 </div>
                             )}
                             <div className="grid grid-cols-4 items-center gap-4">
-                                <Label htmlFor="subscription" className="text-right">Assinatura</Label>
+                                <Label htmlFor="subscription" className={cn("text-right", formErrors.subscription && "text-destructive")}>Assinatura *</Label>
                                 <Select onValueChange={handleSubscriptionChange} value={subscription}>
-                                    <SelectTrigger className="col-span-3">
+                                    <SelectTrigger className="col-span-3" data-error={formErrors.subscription}>
                                         <SelectValue placeholder="Selecione uma assinatura" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -1807,7 +1861,7 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
                     <DialogClose asChild>
                         <Button type="button" variant="secondary">Cancelar</Button>
                     </DialogClose>
-                    <Button onClick={handleSaveClient} type="submit">{saveButtonText}</Button>
+                    <Button onClick={handleSaveClient} type="button">{saveButtonText}</Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>
@@ -2164,7 +2218,9 @@ const ViewClientDetailsDialog = ({ client, trigger, onEdit, subscriptions, onUpd
                 <DialogContent className="sm:max-w-2xl">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-3">
-                        {client.isResale ? (
+                        {client.isPackage ? (
+                            <Users className="h-6 w-6 text-green-500" />
+                        ) : client.isResale ? (
                             <Users className="h-6 w-6 text-red-500" />
                         ) : (
                             <User className="h-6 w-6 text-yellow-400" />
@@ -2178,6 +2234,12 @@ const ViewClientDetailsDialog = ({ client, trigger, onEdit, subscriptions, onUpd
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
                         <div className="space-y-4">
+                             {client.telegramUser && (
+                                <div className="flex items-center gap-3">
+                                    <Send className="h-5 w-5 text-muted-foreground" />
+                                    <span className="font-medium">{client.telegramUser}</span>
+                                </div>
+                            )}
                             <div className="flex items-center gap-3">
                                 <Phone className="h-5 w-5 text-muted-foreground" />
                                 <span className="font-medium">{client.phone}</span>
@@ -2251,7 +2313,7 @@ const ViewClientDetailsDialog = ({ client, trigger, onEdit, subscriptions, onUpd
                             <div className="flex items-center gap-3">
                                 <ShoppingCart className="h-5 w-5 text-muted-foreground" />
                                 <span className="font-medium">{client.subscription}</span>
-                                {client.isResale && <Badge variant="secondary">x{client.quantity}</Badge>}
+                                {(client.isResale || client.isPackage) && <Badge variant="secondary">x{client.quantity}</Badge>}
                             </div>
                             <div className="flex items-center gap-3">
                                 <CalendarIcon className="h-5 w-5 text-muted-foreground" />
@@ -2805,7 +2867,7 @@ const SupportPage = ({ clients, onToggleSupport, setSupportClient }: { clients: 
     }, [clients]);
 
     const handleMarkAsResolved = (client: Client) => {
-        if (client.isResale) {
+        if (client.isResale || client.isPackage) {
             setSupportClient(client);
         } else {
             onToggleSupport(client);
@@ -2826,7 +2888,13 @@ const SupportPage = ({ clients, onToggleSupport, setSupportClient }: { clients: 
                             <CardHeader>
                                 <div className="flex items-center justify-between">
                                     <CardTitle className="flex items-center justify-center sm:justify-start gap-2">
-                                        {client.isResale ? <Users className="h-5 w-5 text-red-500" /> : <User className="h-5 w-5 text-yellow-400" />}
+                                        {client.isPackage ? (
+                                            <Users className="h-5 w-5 text-green-500" />
+                                        ) : client.isResale ? (
+                                            <Users className="h-5 w-5 text-red-500" />
+                                        ) : (
+                                            <User className="h-5 w-5 text-yellow-400" />
+                                        )}
                                         {client.name}
                                     </CardTitle>
                                     <Badge variant="outline">{client.subscription}</Badge>
