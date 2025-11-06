@@ -97,19 +97,7 @@
         "imageBase64": { "type": "string", "description": "Base64 encoded image data for the attachment." }
       },
       "required": ["groupId", "message", "sendAt", "status", "isRecurring"]
-    },
-    "ApiKey": {
-        "title": "ApiKey",
-        "type": "object",
-        "description": "Represents a user's API key for external integrations.",
-        "properties": {
-          "key": { "type": "string", "description": "The unique API key string." },
-          "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when the key was created." },
-          "lastUsed": { "type": "string", "format": "date-time", "description": "Timestamp of the last time the key was used." },
-          "isEnabled": { "type": "boolean", "description": "Whether the API key is currently active." }
-        },
-        "required": ["key", "createdAt", "isEnabled"]
-      }
+    }
   },
   "auth": {
     "providers": ["email"]
@@ -138,10 +126,6 @@
     "/users/{userId}/scheduledGroupMessages/{messageId}": {
       "schema": { "$ref": "#/entities/ScheduledGroupMessage" },
       "description": "Stores all scheduled group messages for a specific user."
-    },
-    "/users/{userId}/apiKeys/{keyId}": {
-        "schema": { "$ref": "#/entities/ApiKey" },
-        "description": "Stores API keys for a specific user."
     }
   }
 }

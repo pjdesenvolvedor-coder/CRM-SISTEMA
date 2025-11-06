@@ -1,112 +1,131 @@
-// IMPORTANT: This file needs to be able to use firebase-admin
-// It is a server-side file and should not be included in the client-side bundle.
-
-import { NextRequest, NextResponse } from 'next/server';
-import { initializeAdminApp } from '@/firebase/server'; // We will create this
-import { Timestamp } from 'firebase-admin/firestore';
-import { headers } from 'next/headers';
-
-// Helper to initialize Firebase Admin SDK
-const { db, auth } = initializeAdminApp();
-
-async function getUserIdFromApiKey(apiKey: string): Promise<string | null> {
-    if (!apiKey.startsWith('zapconnect_')) {
-        return null;
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user in the system.",
+      "properties": {}
+    },
+    "Client": {
+      "title": "Client",
+      "type": "object",
+      "description": "Represents a client in the system.",
+      "properties": {
+        "name": { "type": "string", "description": "Client's full name." },
+        "telegramUser": { "type": "string", "description": "Client's Telegram username." },
+        "phone": { "type": "string", "description": "Client's phone number." },
+        "emails": { "type": "array", "items": { "type": "string", "format": "email" } },
+        "notes": { "type": "string", "description": "Additional notes about the client." },
+        "subscription": { "type": "string", "description": "Name of the subscribed plan." },
+        "dueDate": { "type": "string", "format": "date-time", "description": "Subscription due date." },
+        "paymentMethod": { "type": "string", "enum": ["pix", "cartao", "boleto"], "description": "Method of payment." },
+        "amountPaid": { "type": "number", "description": "Amount paid by the client." },
+        "isResale": { "type": "boolean", "description": "Indicates if the client is a reseller." },
+        "isPackage": { "type": "boolean", "description": "Indicates if the client is a package deal." },
+        "quantity": { "type": "number", "description": "Number of accounts for resale clients." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when the client was added to the system." },
+        "lastNotificationSent": { "type": "string", "format": "date-time", "description": "Timestamp of the last automated due date notification sent." },
+        "lastReminderSent": { "type": "string", "format": "date-time", "description": "Timestamp of the last automated reminder notification sent." },
+        "lastRemarketingPostDueDateSent": { "type": "string", "format": "date-time", "description": "Timestamp of the last remarketing message sent after the due date." },
+        "lastRemarketingPostRegistrationSent": { "type": "string", "format": "date-time", "description": "Timestamp of the last remarketing message sent after registration." },
+        "isSupport": { "type": "boolean", "description": "Indicates if the client is marked for support." },
+        "supportEmails": { "type": "array", "items": { "type": "string", "format": "email" }, "description": "List of emails marked for support for a resale client." }
+      },
+      "required": ["name", "phone", "emails", "subscription", "createdAt"]
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "type": "object",
+      "description": "Represents a subscription plan.",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the subscription plan." },
+        "price": { "type": "number", "description": "Price of the subscription plan." }
+      },
+      "required": ["name", "price"]
+    },
+    "WhatsAppConnection": {
+      "title": "WhatsAppConnection",
+      "type": "object",
+      "description": "Represents a WhatsApp connection instance.",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the WhatsApp Connection entity." },
+        "status": { "type": "string", "description": "The current connection status (disconnected, connecting, connected)." },
+        "qrCode": { "type": "string", "description": "Base64 encoded image data for the QR code." },
+        "lastCheckTime": { "type": "string", "format": "date-time", "description": "Timestamp of the last status check." }
+      },
+      "required": ["id", "status"]
+    },
+    "AutomationConfig": {
+        "title": "AutomationConfig",
+        "type": "object",
+        "description": "Configuration for automated messages.",
+        "properties": {
+            "isEnabled": { "type": "boolean", "description": "Whether the due date message automation is enabled." },
+            "message": { "type": "string", "description": "The message template for the due date notification." },
+            "reminderIsEnabled": { "type": "boolean", "description": "Whether the 3-day reminder automation is enabled." },
+            "reminderMessage": { "type": "string", "description": "The message template for the 3-day reminder." },
+            "remarketingPostDueDateDays": { "type": "number", "description": "Days after due date to send remarketing message." },
+            "remarketingPostDueDateMessage": { "type": "string", "description": "Message for post-due date remarketing." },
+            "remarketingPostDueDateIsEnabled": { "type": "boolean", "description": "Whether post-due date remarketing is enabled." },
+            "remarketingPostRegistrationDays": { "type": "number", "description": "Days after registration to send remarketing message." },
+            "remarketingPostRegistrationMessage": { "type": "string", "description": "Message for post-registration remarketing." },
+            "remarketingPostRegistrationIsEnabled": { "type": "boolean", "description": "Whether post-registration remarketing is enabled." }
+        },
+        "required": ["isEnabled", "message", "reminderIsEnabled", "reminderMessage"]
+    },
+    "Note": {
+      "title": "Note",
+      "type": "object",
+      "description": "Represents a note or a to-do item.",
+      "properties": {
+        "content": { "type": "string", "description": "The content of the note." },
+        "status": { "type": "string", "enum": ["todo", "done"], "description": "The status of the note (to do or done)." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when the note was created." }
+      },
+      "required": ["content", "status", "createdAt"]
+    },
+    "ScheduledGroupMessage": {
+      "title": "ScheduledGroupMessage",
+      "type": "object",
+      "description": "Represents a scheduled message to be sent to a group.",
+      "properties": {
+        "groupId": { "type": "string", "description": "The JID of the target WhatsApp group." },
+        "message": { "type": "string", "description": "The content of the message to be sent." },
+        "sendAt": { "type": "string", "format": "date-time", "description": "The scheduled time for the message to be sent." },
+        "status": { "type": "string", "enum": ["pending", "sent"], "description": "The current status of the scheduled message." },
+        "isRecurring": { "type": "boolean", "description": "Indicates if the message should be sent daily." },
+        "imageBase64": { "type": "string", "description": "Base64 encoded image data for the attachment." }
+      },
+      "required": ["groupId", "message", "sendAt", "status", "isRecurring"]
     }
-    const usersRef = db.collectionGroup('apiKeys');
-    const snapshot = await usersRef.where('key', '==', apiKey).where('isEnabled', '==', true).limit(1).get();
-
-    if (snapshot.empty) {
-        return null;
+  },
+  "auth": {
+    "providers": ["email"]
+  },
+  "firestore": {
+    "/users/{userId}/clients/{clientId}": {
+      "schema": { "$ref": "#/entities/Client" },
+      "description": "Stores all client data for a specific user."
+    },
+    "/users/{userId}/subscriptions/{subscriptionId}": {
+      "schema": { "$ref": "#/entities/Subscription" },
+      "description": "Stores all subscription plans for a specific user."
+    },
+    "/users/{userId}/whatsapp_connection/{connectionId}": {
+        "schema": { "$ref": "#/entities/WhatsAppConnection" },
+        "description": "Stores WhatsApp connection data for a specific user."
+    },
+    "/users/{userId}/automation/{automationId}": {
+        "schema": { "$ref": "#/entities/AutomationConfig" },
+        "description": "Stores automation settings for a specific user."
+    },
+    "/users/{userId}/notes/{noteId}": {
+        "schema": { "$ref": "#/entities/Note" },
+        "description": "Stores all notes for a specific user."
+    },
+    "/users/{userId}/scheduledGroupMessages/{messageId}": {
+      "schema": { "$ref": "#/entities/ScheduledGroupMessage" },
+      "description": "Stores all scheduled group messages for a specific user."
     }
-
-    // The parent of the apiKey doc is the user doc
-    const userDoc = snapshot.docs[0].ref.parent.parent;
-    return userDoc?.id || null;
-}
-
-
-export async function POST(req: NextRequest) {
-    const headersList = headers();
-    const authorization = headersList.get('authorization');
-
-    if (!authorization || !authorization.startsWith('Bearer ')) {
-        return NextResponse.json({ error: 'Authorization header is missing or invalid.' }, { status: 401 });
-    }
-
-    const apiKey = authorization.split('Bearer ')[1];
-    
-    let userId: string | null = null;
-    try {
-        userId = await getUserIdFromApiKey(apiKey);
-    } catch(e) {
-        console.error("API Key validation error:", e);
-        return NextResponse.json({ error: 'Internal server error during API key validation.' }, { status: 500 });
-    }
-
-    if (!userId) {
-        return NextResponse.json({ error: 'Invalid API Key.' }, { status: 401 });
-    }
-
-
-  try {
-    const body = await req.json();
-
-    // --- Validation ---
-    const { name, phone, emails, subscription, dueDate, amountPaid, isResale, notes } = body;
-
-    if (!name || !phone || !emails || !Array.isArray(emails) || emails.length === 0 || !subscription) {
-      return NextResponse.json({ error: 'Missing required fields: name, phone, emails, and subscription are required.' }, { status: 400 });
-    }
-
-    // --- Data Transformation ---
-    const quantity = (isResale && Array.isArray(emails)) ? emails.length : 1;
-    const now = Timestamp.now();
-    
-    let dueDateTimestamp: Timestamp | null = null;
-    if (dueDate) {
-        const date = new Date(dueDate);
-        if (!isNaN(date.getTime())) {
-            dueDateTimestamp = Timestamp.fromDate(date);
-        }
-    }
-
-
-    const clientData = {
-      name,
-      phone,
-      emails,
-      subscription,
-      dueDate: dueDateTimestamp,
-      amountPaid: amountPaid ?? null,
-      isResale: isResale ?? false,
-      notes: notes ?? '',
-      quantity,
-      createdAt: now,
-      isSupport: false,
-      supportEmails: [],
-      // Set initial automation timestamps to avoid accidental sends right after creation
-      lastNotificationSent: now,
-      lastReminderSent: now,
-      lastRemarketingPostDueDateSent: null,
-      lastRemarketingPostRegistrationSent: null,
-    };
-
-    // --- Firestore Interaction ---
-    const clientRef = await db.collection('users').doc(userId).collection('clients').add(clientData);
-
-    // --- Response ---
-    return NextResponse.json({
-      message: 'Client created successfully',
-      clientId: clientRef.id,
-      data: { ...clientData, id: clientRef.id },
-    }, { status: 201 });
-
-  } catch (error) {
-    console.error('API Error:', error);
-    if (error instanceof SyntaxError) {
-        return NextResponse.json({ error: 'Invalid JSON in request body.' }, { status: 400 });
-    }
-    return NextResponse.json({ error: 'An internal server error occurred.' }, { status: 500 });
   }
 }

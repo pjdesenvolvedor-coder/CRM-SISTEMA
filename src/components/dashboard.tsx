@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, Code, Key, ImageIcon } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -65,7 +65,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Separator } from './ui/separator';
 import { Badge } from './ui/badge';
 import { useFirestore, useCollection, addDoc, updateDoc, deleteDoc, useMemoFirebase } from '@/firebase';
-import { collection, Timestamp, doc, writeBatch, query, orderBy, getDocs, where, limit } from 'firebase/firestore';
+import { collection, Timestamp, doc, writeBatch, query, orderBy, getDocs, where } from 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
 import { Switch } from './ui/switch';
 import {
@@ -142,13 +142,6 @@ type ScheduledGroupMessage = {
     imageBase64?: string;
 };
 
-type ApiKey = {
-    id: string;
-    key: string;
-    createdAt: Timestamp;
-    isEnabled: boolean;
-};
-
 const getClientStatus = (dueDate: Date | Timestamp | null): ClientStatus => {
     if (!dueDate) {
       return 'ativo'; // No due date means always active
@@ -187,7 +180,7 @@ const AppDashboard = () => {
 
     const messagingPaths = ['/automacao', '/automacao/remarketing', '/automacao/grupos'];
     const clientPaths = ['/clientes', '/clientes/suporte'];
-    const settingsPaths = ['/configuracoes', '/configuracoes/api'];
+    const settingsPaths = ['/configuracoes'];
     const [isMessagingMenuOpen, setIsMessagingMenuOpen] = useState(messagingPaths.some(p => pathname.startsWith(p)));
     const [isClientMenuOpen, setIsClientMenuOpen] = useState(clientPaths.some(p => pathname.startsWith(p)));
     const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(settingsPaths.some(p => pathname.startsWith(p)));
@@ -307,11 +300,6 @@ const AppDashboard = () => {
     const scheduledMessagesQuery = useMemoFirebase(() => (firestore && userId) ? query(collection(firestore, 'users', userId, 'scheduledGroupMessages'), orderBy('sendAt', 'desc')) : null, [firestore, userId]);
     const { data: scheduledMessages, isLoading: scheduledMessagesLoading } = useCollection<ScheduledGroupMessage>(scheduledMessagesQuery);
     
-    const apiKeysQuery = useMemoFirebase(() => (firestore && userId) ? query(collection(firestore, 'users', userId, 'apiKeys'), limit(1)) : null, [firestore, userId]);
-    const { data: apiKeys, isLoading: apiKeysLoading } = useCollection<ApiKey>(apiKeysQuery);
-    const apiKey = useMemo(() => apiKeys?.[0], [apiKeys]);
-
-
     const [supportClient, setSupportClient] = useState<Client | null>(null);
 
     const transformedClients = React.useMemo(() => {
@@ -547,14 +535,12 @@ const AppDashboard = () => {
                 return <GroupsPage scheduledMessages={scheduledMessages ?? []} />;
             case '/configuracoes':
                 return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} />;
-            case '/configuracoes/api':
-                return <ApiPage apiKey={apiKey} />;
             default:
                 return <DashboardPage clients={transformedClients} rawClients={clients ?? []} />;
         }
     };
     
-    const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading || apiKeysLoading;
+    const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading;
 
     if (isLoading) {
         return (
@@ -695,11 +681,6 @@ const AppDashboard = () => {
                                 <Link href="/configuracoes" onClick={(e) => { e.preventDefault(); startTransition(() => { window.history.pushState(null, '', '/configuracoes'); }); }}>
                                     <SidebarMenuButton variant="ghost" className="w-full justify-start" isActive={pathname === '/configuracoes'}>
                                         Planos e Assinaturas
-                                    </SidebarMenuButton>
-                                </Link>
-                                <Link href="/configuracoes/api" onClick={(e) => { e.preventDefault(); startTransition(() => { window.history.pushState(null, '', '/configuracoes/api'); }); }}>
-                                    <SidebarMenuButton variant="ghost" className="w-full justify-start" isActive={pathname === '/configuracoes/api'}>
-                                        API
                                     </SidebarMenuButton>
                                 </Link>
                             </div>
@@ -3935,147 +3916,6 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
             </DialogContent>
         </Dialog>
     );
-}
-
-const ApiPage = ({ apiKey }: { apiKey: ApiKey | undefined }) => {
-    const firestore = useFirestore();
-    const { user } = useSecurity();
-    const userId = user?.uid;
-    const { toast } = useToast();
-    const [isPending, startTransition] = useTransition();
-
-    const generateApiKey = () => {
-        if (!firestore || !userId) return;
-
-        startTransition(async () => {
-            // For simplicity, we'll allow only one key per user.
-            // Check if a key already exists.
-            const apiKeysCol = collection(firestore, 'users', userId, 'apiKeys');
-            const existingKeysSnapshot = await getDocs(query(apiKeysCol, limit(1)));
-            
-            if (!existingKeysSnapshot.empty) {
-                toast({
-                    variant: 'destructive',
-                    title: 'Chave já existente',
-                    description: 'Você já possui uma chave de API. Regenere-a se desejar uma nova.',
-                });
-                return;
-            }
-
-            const newKey = `zapconnect_${[...Array(32)].map(() => Math.random().toString(36)[2]).join('')}`;
-            const newApiKey: Omit<ApiKey, 'id'> = {
-                key: newKey,
-                createdAt: Timestamp.now(),
-                isEnabled: true,
-            };
-            addDoc(apiKeysCol, newApiKey);
-            toast({ title: 'Chave de API Gerada!', description: 'Sua nova chave de API foi criada com sucesso.' });
-        });
-    };
-
-    const regenerateApiKey = () => {
-        if (!firestore || !userId || !apiKey) return;
-        startTransition(() => {
-            const newKey = `zapconnect_${[...Array(32)].map(() => Math.random().toString(36)[2]).join('')}`;
-            const keyDoc = doc(firestore, 'users', userId, 'apiKeys', apiKey.id);
-            updateDoc(keyDoc, { key: newKey, createdAt: Timestamp.now() });
-            toast({ title: 'Chave de API Regenerada!', description: 'Sua chave de API foi atualizada.' });
-        });
-    };
-
-    const handleCopy = (text: string) => {
-        navigator.clipboard.writeText(text).then(() => {
-            toast({ title: 'Copiado!', description: 'O texto foi copiado para a área de transferência.' });
-        });
-    };
-    
-    const exampleBody = {
-        name: "Nome do Cliente",
-        phone: "5511999998888",
-        emails: ["cliente@example.com"],
-        subscription: "Plano Teste",
-        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
-        amountPaid: 49.90,
-        isResale: false,
-        notes: "Cliente adicionado via API"
-      };
-
-    return (
-        <div className="w-full space-y-8">
-            <div>
-                <h2 className="text-2xl font-bold">Documentação da API</h2>
-                <p className="text-muted-foreground">Integre seu sistema com o ZapConnect para criar clientes programaticamente.</p>
-            </div>
-
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><Key className="h-5 w-5" /> Sua Chave de API</CardTitle>
-                    <CardDescription>
-                        Esta chave é necessária para autenticar suas requisições na API. Mantenha-a segura.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    {apiKey ? (
-                        <div className="flex items-center justify-between gap-4 p-3 bg-muted rounded-md">
-                            <span className="text-sm font-mono break-all">{apiKey.key}</span>
-                            <Button variant="ghost" size="icon" onClick={() => handleCopy(apiKey.key)}>
-                                <Copy className="h-4 w-4" />
-                            </Button>
-                       </div>
-                    ) : (
-                        <p className="text-sm text-muted-foreground">Você ainda não gerou uma chave de API.</p>
-                    )}
-                </CardContent>
-                <CardFooter>
-                    <Button onClick={apiKey ? regenerateApiKey : generateApiKey} disabled={isPending}>
-                        {isPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
-                        {apiKey ? 'Regenerar Chave' : 'Gerar Chave de API'}
-                    </Button>
-                </CardFooter>
-            </Card>
-
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><Code className="h-5 w-5" /> Endpoint de Criação de Cliente</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <div>
-                        <Label>Método</Label>
-                        <div className='flex items-center gap-2'>
-                             <Badge variant="secondary">POST</Badge>
-                        </div>
-                    </div>
-                     <div>
-                        <Label>URL do Endpoint</Label>
-                         <div className="flex items-center justify-between gap-4 p-3 bg-muted rounded-md">
-                            <code className="text-sm break-all">/api/clients</code>
-                            <Button variant="ghost" size="icon" onClick={() => handleCopy('/api/clients')}>
-                                <Copy className="h-4 w-4" />
-                            </Button>
-                        </div>
-                    </div>
-                     <div>
-                        <Label>Headers</Label>
-                        <div className="p-3 bg-muted rounded-md text-sm font-mono">
-                           <p>Content-Type: application/json</p>
-                           <p>Authorization: Bearer <span className='text-muted-foreground'>&#123;sua_chave_de_api&#125;</span></p>
-                        </div>
-                    </div>
-                    <div>
-                        <Label>Exemplo de Corpo da Requisição (JSON)</Label>
-                        <div className="relative">
-                            <pre className="p-4 bg-muted rounded-md text-sm overflow-x-auto font-mono">
-                                {JSON.stringify(exampleBody, null, 2)}
-                            </pre>
-                            <Button variant="ghost" size="icon" className='absolute top-2 right-2' onClick={() => handleCopy(JSON.stringify(exampleBody, null, 2))}>
-                                <Copy className="h-4 w-4" />
-                            </Button>
-                        </div>
-                    </div>
-                </CardContent>
-            </Card>
-        </div>
-    )
 }
 
 export default AppDashboard;
