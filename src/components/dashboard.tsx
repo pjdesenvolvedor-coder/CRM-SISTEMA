@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, Code, Key } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, Code, Key, ImageIcon } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -1536,7 +1536,17 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
     }, [clientToEdit, isOpen]);
 
     const showMultipleEmails = isResale || isPackage;
-    const quantity = showMultipleEmails ? emails.filter(e => e.trim() !== '').length : 1;
+    
+    // Adjusted quantity calculation
+    const quantity = useMemo(() => {
+        if (isPackage) {
+            return 1;
+        }
+        if (isResale) {
+            return emails.filter(e => e.trim() !== '').length || 1;
+        }
+        return 1;
+    }, [isPackage, isResale, emails]);
 
     const handleSaveClient = () => {
         const finalEmails = emails.filter(e => e.trim() !== '');
@@ -1569,7 +1579,7 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
             amountPaid: typeof amountPaid === 'string' ? parseFloat(amountPaid) : amountPaid,
             isResale,
             isPackage,
-            quantity
+            quantity // Use the calculated quantity
         };
         
         if(isEditMode && clientToEdit) {
@@ -1607,10 +1617,11 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
         setEmails(newEmails);
     };
 
-    const updatePrice = (subName: string, currentQuantity: number) => {
+    const updatePrice = useCallback((subName: string) => {
         setSubscription(subName);
         const selectedSub = subscriptions.find(s => s.name === subName);
         if (selectedSub) {
+            const currentQuantity = isPackage ? 1 : (isResale ? (emails.filter(e => e.trim() !== '').length || 1) : 1);
             const totalPrice = selectedSub.price * currentQuantity;
             setAmountPaid(totalPrice);
             setAmountPaidDisplay(totalPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
@@ -1618,13 +1629,20 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
             setAmountPaid('');
             setAmountPaidDisplay('');
         }
-    };
+    }, [subscriptions, isPackage, isResale, emails]);
     
     const handleSubscriptionChange = (subName: string) => {
-        const currentQuantity = showMultipleEmails ? Math.max(1, emails.filter(e => e.trim() !== '').length) : 1;
-        updatePrice(subName, currentQuantity);
+        updatePrice(subName);
         if (subName) setFormErrors(prev => ({...prev, subscription: false}));
     }
+
+    // When emails or type change, update the price
+    useEffect(() => {
+        if (subscription) {
+            updatePrice(subscription);
+        }
+    }, [emails, isPackage, isResale, subscription, updatePrice]);
+
 
     const handleAmountPaidChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const rawValue = e.target.value;
@@ -1807,19 +1825,17 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
                     </TabsContent>
                     <TabsContent value="pagamento">
                         <div className="grid gap-4 py-4">
-                            {showMultipleEmails && (
-                                <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="quantity" className="text-right">Quantidade</Label>
-                                    <Input
-                                        id="quantity"
-                                        type="number"
-                                        value={quantity}
-                                        className="col-span-3"
-                                        readOnly
-                                        disabled
-                                    />
-                                </div>
-                            )}
+                            <div className="grid grid-cols-4 items-center gap-4">
+                                <Label htmlFor="quantity" className="text-right">Quantidade</Label>
+                                <Input
+                                    id="quantity"
+                                    type="number"
+                                    value={quantity}
+                                    className="col-span-3"
+                                    readOnly
+                                    disabled
+                                />
+                            </div>
                             <div className="grid grid-cols-4 items-center gap-4">
                                 <Label htmlFor="subscription" className={cn("text-right", formErrors.subscription && "text-destructive")}>Assinatura *</Label>
                                 <Select onValueChange={handleSubscriptionChange} value={subscription}>
