@@ -97,6 +97,17 @@
         "imageBase64": { "type": "string", "description": "Base64 encoded image data for the attachment." }
       },
       "required": ["groupId", "message", "sendAt", "status", "isRecurring"]
+    },
+    "AdCampaign": {
+      "title": "AdCampaign",
+      "type": "object",
+      "description": "Represents an advertising campaign's performance.",
+      "properties": {
+        "date": { "type": "string", "format": "date-time", "description": "The date the campaign data was recorded." },
+        "amountSpent": { "type": "number", "description": "The total amount of money spent on the campaign." },
+        "amountReturned": { "type": "number", "description": "The total amount of money returned from the campaign." }
+      },
+      "required": ["date", "amountSpent", "amountReturned"]
     }
   },
   "auth": {
@@ -126,6 +137,10 @@
     "/users/{userId}/scheduledGroupMessages/{messageId}": {
       "schema": { "$ref": "#/entities/ScheduledGroupMessage" },
       "description": "Stores all scheduled group messages for a specific user."
+    },
+    "/users/{userId}/adCampaigns/{campaignId}": {
+        "schema": { "$ref": "#/entities/AdCampaign" },
+        "description": "Stores all ad campaign performance data for a specific user."
     }
   }
 }

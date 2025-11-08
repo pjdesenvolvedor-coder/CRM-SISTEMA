@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -142,6 +142,13 @@ type ScheduledGroupMessage = {
     imageBase64?: string;
 };
 
+type AdCampaign = {
+    id: string;
+    date: Timestamp;
+    amountSpent: number;
+    amountReturned: number;
+};
+
 const getClientStatus = (dueDate: Date | Timestamp | null): ClientStatus => {
     if (!dueDate) {
       return 'ativo'; // No due date means always active
@@ -181,9 +188,12 @@ const AppDashboard = () => {
     const messagingPaths = ['/automacao', '/automacao/remarketing', '/automacao/grupos'];
     const clientPaths = ['/clientes', '/clientes/suporte'];
     const settingsPaths = ['/configuracoes'];
+    const notesPaths = ['/notas', '/notas/anuncios'];
+
     const [isMessagingMenuOpen, setIsMessagingMenuOpen] = useState(messagingPaths.some(p => pathname.startsWith(p)));
     const [isClientMenuOpen, setIsClientMenuOpen] = useState(clientPaths.some(p => pathname.startsWith(p)));
     const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(settingsPaths.some(p => pathname.startsWith(p)));
+    const [isNotesMenuOpen, setIsNotesMenuOpen] = useState(notesPaths.some(p => pathname.startsWith(p)));
 
     useEffect(() => {
         const isCurrentPathInMessaging = messagingPaths.some(p => pathname.startsWith(p));
@@ -197,6 +207,10 @@ const AppDashboard = () => {
         const isCurrentPathInSettings = settingsPaths.some(p => pathname.startsWith(p));
         if(!isCurrentPathInSettings) {
             setIsSettingsMenuOpen(false)
+        }
+        const isCurrentPathInNotes = notesPaths.some(p => pathname.startsWith(p));
+        if(!isCurrentPathInNotes) {
+            setIsNotesMenuOpen(false)
         }
     }, [pathname]);
 
@@ -300,6 +314,9 @@ const AppDashboard = () => {
     const scheduledMessagesQuery = useMemoFirebase(() => (firestore && userId) ? query(collection(firestore, 'users', userId, 'scheduledGroupMessages'), orderBy('sendAt', 'desc')) : null, [firestore, userId]);
     const { data: scheduledMessages, isLoading: scheduledMessagesLoading } = useCollection<ScheduledGroupMessage>(scheduledMessagesQuery);
     
+    const adCampaignsQuery = useMemoFirebase(() => (firestore && userId) ? query(collection(firestore, 'users', userId, 'adCampaigns'), orderBy('date', 'desc')) : null, [firestore, userId]);
+    const { data: adCampaigns, isLoading: adCampaignsLoading } = useCollection<AdCampaign>(adCampaignsQuery);
+
     const [supportClient, setSupportClient] = useState<Client | null>(null);
 
     const transformedClients = React.useMemo(() => {
@@ -527,6 +544,8 @@ const AppDashboard = () => {
                 return <SupportPage clients={transformedClients} onToggleSupport={handleToggleSupport} setSupportClient={setSupportClient} />;
             case '/notas':
                 return <NotesPage notes={notes ?? []} />;
+            case '/notas/anuncios':
+                return <AdsPage campaigns={adCampaigns ?? []} />;
             case '/automacao':
                 return <AutomationPage config={automationSettings} />;
             case '/automacao/remarketing':
@@ -540,7 +559,7 @@ const AppDashboard = () => {
         }
     };
     
-    const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading;
+    const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading || adCampaignsLoading;
 
     if (isLoading) {
         return (
@@ -634,11 +653,29 @@ const AppDashboard = () => {
                 </Collapsible>
             </SidebarMenuItem>
             <SidebarMenuItem>
-                <Link href="/notas" onClick={(e) => { e.preventDefault(); startTransition(() => { window.history.pushState(null, '', '/notas'); }); }}>
-                    <SidebarMenuButton isActive={pathname === '/notas'}>
-                        <ClipboardList/> Notas
-                    </SidebarMenuButton>
-                </Link>
+                <Collapsible open={isNotesMenuOpen} onOpenChange={setIsNotesMenuOpen}>
+                    <CollapsibleTrigger asChild>
+                        <SidebarMenuButton isActive={pathname.startsWith('/notas')} className="w-full justify-start">
+                            <ClipboardList />
+                            <span className="flex-1">Notas</span>
+                            <ChevronDown className={cn("h-4 w-4 transition-transform", isNotesMenuOpen && "rotate-180")} />
+                        </SidebarMenuButton>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                        <div className="pl-8 py-2 flex flex-col gap-2">
+                             <Link href="/notas" onClick={(e) => { e.preventDefault(); startTransition(() => { window.history.pushState(null, '', '/notas'); }); }}>
+                                <SidebarMenuButton variant="ghost" className="w-full justify-start" isActive={pathname === '/notas'}>
+                                    <CheckCircle/> Tarefas
+                                </SidebarMenuButton>
+                            </Link>
+                            <Link href="/notas/anuncios" onClick={(e) => { e.preventDefault(); startTransition(() => { window.history.pushState(null, '', '/notas/anuncios'); }); }}>
+                                <SidebarMenuButton variant="ghost" className="w-full justify-start" isActive={pathname === '/notas/anuncios'}>
+                                    <Megaphone/> Anúncios
+                                </SidebarMenuButton>
+                            </Link>
+                        </div>
+                    </CollapsibleContent>
+                </Collapsible>
             </SidebarMenuItem>
             <SidebarMenuItem>
                 <Dialog>
@@ -3309,19 +3346,19 @@ const NotesPage = ({ notes }: { notes: Note[] }) => {
         <div className="w-full space-y-6">
             <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
                 <div className='text-center sm:text-left'>
-                    <h2 className="text-2xl font-bold">Notas e Tarefas</h2>
+                    <h2 className="text-2xl font-bold">Tarefas</h2>
                     <p className="text-muted-foreground">Arraste as notas entre as colunas para alterar o status.</p>
                 </div>
                 <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
                     <PopoverTrigger asChild>
                         <Button className='w-full sm:w-auto'>
-                            <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Nota
+                            <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Tarefa
                         </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-80">
                         <div className="grid gap-4">
                             <div className="space-y-2">
-                                <h4 className="font-medium leading-none">Nova Nota</h4>
+                                <h4 className="font-medium leading-none">Nova Tarefa</h4>
                                 <p className="text-sm text-muted-foreground">
                                     Escreva sua nova tarefa ou anotação.
                                 </p>
@@ -3917,5 +3954,220 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
         </Dialog>
     );
 }
+
+const AdsPage = ({ campaigns }: { campaigns: AdCampaign[] }) => {
+    const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const [editingCampaign, setEditingCampaign] = useState<AdCampaign | null>(null);
+    const firestore = useFirestore();
+    const { user } = useSecurity();
+    const userId = user?.uid;
+
+    const metrics = useMemo(() => {
+        const totalSpent = campaigns.reduce((acc, c) => acc + c.amountSpent, 0);
+        const totalReturned = campaigns.reduce((acc, c) => acc + c.amountReturned, 0);
+        const netProfit = totalReturned - totalSpent;
+        return { totalSpent, totalReturned, netProfit };
+    }, [campaigns]);
+
+    const handleSaveCampaign = (campaignData: Omit<AdCampaign, 'id'>) => {
+        if (!firestore || !userId) return;
+
+        if (editingCampaign) {
+            const campaignDoc = doc(firestore, 'users', userId, 'adCampaigns', editingCampaign.id);
+            updateDoc(campaignDoc, campaignData);
+        } else {
+            const campaignsCol = collection(firestore, 'users', userId, 'adCampaigns');
+            addDoc(campaignsCol, campaignData);
+        }
+        setIsDialogOpen(false);
+        setEditingCampaign(null);
+    };
+
+    const handleDeleteCampaign = (campaignId: string) => {
+        if (!firestore || !userId) return;
+        const campaignDoc = doc(firestore, 'users', userId, 'adCampaigns', campaignId);
+        deleteDoc(campaignDoc);
+    };
+
+    return (
+        <div className="w-full space-y-6">
+            <div className="text-center sm:text-left">
+                <h2 className="text-2xl font-bold">Relatório de Anúncios</h2>
+                <p className="text-muted-foreground">Monitore seus gastos e retornos.</p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+                <Card className="bg-red-500/10 dark:bg-red-900/20 border-red-500/20">
+                    <CardHeader className="text-center pb-2">
+                        <CardTitle className="text-lg font-bold text-red-500 neon-red flex items-center justify-center gap-2">
+                            <span>💸</span> Gasto Total
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-center">
+                        <p className="text-3xl font-bold">{metrics.totalSpent.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                    </CardContent>
+                </Card>
+                <Card className="bg-green-500/10 dark:bg-green-900/20 border-green-500/20">
+                    <CardHeader className="text-center pb-2">
+                        <CardTitle className="text-lg font-bold text-green-400 neon-green flex items-center justify-center gap-2">
+                           <span>💰</span> Retorno Total
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-center">
+                         <p className="text-3xl font-bold">{metrics.totalReturned.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                    </CardContent>
+                </Card>
+                 <Card className="bg-cyan-500/10 dark:bg-cyan-900/20 border-cyan-500/20">
+                    <CardHeader className="text-center pb-2">
+                        <CardTitle className="text-lg font-bold text-cyan-400 neon-blue flex items-center justify-center gap-2">
+                           <span>🚀</span> Lucro Líquido
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-center">
+                          <p className={cn("text-3xl font-bold", metrics.netProfit < 0 ? "text-red-500" : "text-green-400")}>{metrics.netProfit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                    </CardContent>
+                </Card>
+            </div>
+
+            <div className="flex justify-center sm:justify-start">
+                <Button onClick={() => { setEditingCampaign(null); setIsDialogOpen(true); }}>
+                    <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Registro
+                </Button>
+            </div>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Histórico de Campanhas</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Data</TableHead>
+                                <TableHead>Valor Gasto</TableHead>
+                                <TableHead>Retorno</TableHead>
+                                <TableHead className="text-right">Ações</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {campaigns.length > 0 ? campaigns.map(c => (
+                                <TableRow key={c.id}>
+                                    <TableCell>{format(c.date.toDate(), 'dd/MM/yyyy')}</TableCell>
+                                    <TableCell className="text-red-500">{c.amountSpent.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</TableCell>
+                                    <TableCell className="text-green-500">{c.amountReturned.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</TableCell>
+                                    <TableCell className="text-right">
+                                        <Button variant="ghost" size="icon" onClick={() => {setEditingCampaign(c); setIsDialogOpen(true);}}><Edit className="h-4 w-4" /></Button>
+                                        <AlertDialog>
+                                            <AlertDialogTrigger asChild>
+                                                <Button variant="ghost" size="icon"><Trash className="h-4 w-4 text-destructive" /></Button>
+                                            </AlertDialogTrigger>
+                                            <AlertDialogContent>
+                                                <AlertDialogHeader>
+                                                    <AlertDialogTitle>Excluir registro?</AlertDialogTitle>
+                                                    <AlertDialogDescription>Essa ação não pode ser desfeita.</AlertDialogDescription>
+                                                </AlertDialogHeader>
+                                                <AlertDialogFooter>
+                                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                                    <AlertDialogAction onClick={() => handleDeleteCampaign(c.id)}>Excluir</AlertDialogAction>
+                                                </AlertDialogFooter>
+                                            </AlertDialogContent>
+                                        </AlertDialog>
+                                    </TableCell>
+                                </TableRow>
+                            )) : (
+                                <TableRow>
+                                    <TableCell colSpan={4} className="h-24 text-center">Nenhum registro de anúncio.</TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
+
+            <AddEditAdCampaignDialog
+                isOpen={isDialogOpen}
+                onOpenChange={setIsDialogOpen}
+                onSave={handleSaveCampaign}
+                campaignToEdit={editingCampaign}
+            />
+        </div>
+    );
+};
+
+const AddEditAdCampaignDialog = ({ isOpen, onOpenChange, onSave, campaignToEdit }: { isOpen: boolean; onOpenChange: (open: boolean) => void; onSave: (data: Omit<AdCampaign, 'id'>) => void; campaignToEdit: AdCampaign | null }) => {
+    const [date, setDate] = useState<Date | undefined>(new Date());
+    const [amountSpent, setAmountSpent] = useState('');
+    const [amountReturned, setAmountReturned] = useState('');
+    const { toast } = useToast();
+
+    useEffect(() => {
+        if (isOpen) {
+            if (campaignToEdit) {
+                setDate(campaignToEdit.date.toDate());
+                setAmountSpent(campaignToEdit.amountSpent.toString());
+                setAmountReturned(campaignToEdit.amountReturned.toString());
+            } else {
+                setDate(new Date());
+                setAmountSpent('');
+                setAmountReturned('');
+            }
+        }
+    }, [isOpen, campaignToEdit]);
+
+    const handleSave = () => {
+        const spent = parseFloat(amountSpent);
+        const returned = parseFloat(amountReturned);
+
+        if (!date || isNaN(spent) || isNaN(returned)) {
+            toast({ variant: 'destructive', title: 'Campos inválidos', description: 'Por favor, preencha todos os campos corretamente.' });
+            return;
+        }
+
+        onSave({
+            date: Timestamp.fromDate(date),
+            amountSpent: spent,
+            amountReturned: returned,
+        });
+    };
+
+    return (
+        <Dialog open={isOpen} onOpenChange={onOpenChange}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>{campaignToEdit ? 'Editar' : 'Adicionar'} Registro de Anúncio</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                        <Label>Data</Label>
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant="outline" className={cn("justify-start text-left font-normal", !date && "text-muted-foreground")}>
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {date ? format(date, "dd/MM/yyyy") : <span>Escolha uma data</span>}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                                <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
+                            </PopoverContent>
+                        </Popover>
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="amountSpent">Valor Gasto</Label>
+                        <Input id="amountSpent" type="number" value={amountSpent} onChange={e => setAmountSpent(e.target.value)} placeholder="Ex: 50.00" />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="amountReturned">Valor Retornado</Label>
+                        <Input id="amountReturned" type="number" value={amountReturned} onChange={e => setAmountReturned(e.target.value)} placeholder="Ex: 150.00" />
+                    </div>
+                </div>
+                <DialogFooter>
+                    <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
+                    <Button onClick={handleSave}>Salvar</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+};
+
 
 export default AppDashboard;

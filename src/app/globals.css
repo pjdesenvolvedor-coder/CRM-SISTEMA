@@ -136,4 +136,29 @@ body {
   .animate-spin-slow {
     animation: spin 5s linear infinite;
   }
+
+  .neon-red {
+    text-shadow:
+      0 0 5px hsl(0 100% 50% / 0.8),
+      0 0 10px hsl(0 100% 50% / 0.8),
+      0 0 20px hsl(0 100% 50% / 0.8),
+      0 0 40px hsl(348 100% 50% / 1),
+      0 0 80px hsl(348 100% 50% / 1);
+  }
+  .neon-green {
+    text-shadow:
+      0 0 5px hsl(120 100% 50% / 0.8),
+      0 0 10px hsl(120 100% 50% / 0.8),
+      0 0 20px hsl(120 100% 50% / 0.8),
+      0 0 40px hsl(120 100% 50% / 1),
+      0 0 80px hsl(120 100% 50% / 1);
+  }
+  .neon-blue {
+     text-shadow:
+      0 0 5px hsl(180 100% 50% / 0.8),
+      0 0 10px hsl(180 100% 50% / 0.8),
+      0 0 20px hsl(180 100% 50% / 0.8),
+      0 0 40px hsl(195 100% 50% / 1),
+      0 0 80px hsl(195 100% 50% / 1);
+  }
 }
