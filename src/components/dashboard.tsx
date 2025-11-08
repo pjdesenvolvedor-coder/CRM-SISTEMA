@@ -3997,34 +3997,33 @@ const AdsPage = ({ campaigns }: { campaigns: AdCampaign[] }) => {
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">
-                <Card className="bg-red-500/10 dark:bg-red-900/20 border-red-500/20">
-                    <CardHeader className="text-center pb-2">
-                        <CardTitle className="text-lg font-bold text-red-500 neon-red flex items-center justify-center gap-2">
-                            <span>💸</span> Gasto Total
-                        </CardTitle>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Gasto Total</CardTitle>
+                        <DollarSign className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
-                    <CardContent className="text-center">
-                        <p className="text-3xl font-bold">{metrics.totalSpent.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-red-500">{metrics.totalSpent.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
                     </CardContent>
                 </Card>
-                <Card className="bg-green-500/10 dark:bg-green-900/20 border-green-500/20">
-                    <CardHeader className="text-center pb-2">
-                        <CardTitle className="text-lg font-bold text-green-400 neon-green flex items-center justify-center gap-2">
-                           <span>💰</span> Retorno Total
-                        </CardTitle>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Retorno Total</CardTitle>
+                        <DollarSign className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
-                    <CardContent className="text-center">
-                         <p className="text-3xl font-bold">{metrics.totalReturned.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-green-500">{metrics.totalReturned.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
                     </CardContent>
                 </Card>
-                 <Card className="bg-cyan-500/10 dark:bg-cyan-900/20 border-cyan-500/20">
-                    <CardHeader className="text-center pb-2">
-                        <CardTitle className="text-lg font-bold text-cyan-400 neon-blue flex items-center justify-center gap-2">
-                           <span>🚀</span> Lucro Líquido
-                        </CardTitle>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Lucro Líquido</CardTitle>
+                        <DollarSign className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
-                    <CardContent className="text-center">
-                          <p className={cn("text-3xl font-bold", metrics.netProfit < 0 ? "text-red-500" : "text-green-400")}>{metrics.netProfit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                    <CardContent>
+                        <div className={cn("text-2xl font-bold", metrics.netProfit < 0 ? "text-red-500" : "text-green-500")}>
+                            {metrics.netProfit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </div>
                     </CardContent>
                 </Card>
             </div>
