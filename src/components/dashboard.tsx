@@ -4012,7 +4012,7 @@ const AdsPage = ({ campaigns }: { campaigns: AdCampaign[] }) => {
                         <DollarSign className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-green-500">{metrics.totalReturned.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+                        <div className="text-2xl font-bold text-yellow-500">{metrics.totalReturned.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
                     </CardContent>
                 </Card>
                 <Card>
