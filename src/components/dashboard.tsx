@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -54,7 +54,7 @@ import { Loader } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from './ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from './ui/dropdown-menu';
-import { addDays, addMonths, format, isFuture, differenceInDays, startOfDay, subDays, isToday, startOfMonth, endOfMonth, startOfYear, endOfYear, isWithinInterval, endOfDay, setHours, setMinutes, setSeconds, getHours, getMinutes, isPast } from 'date-fns';
+import { addDays, addMonths, format, isFuture, differenceInDays, startOfDay, subDays, isToday, startOfMonth, endOfMonth, startOfYear, endOfYear, isWithinInterval, endOfDay, setHours, setMinutes, setSeconds, getHours, getMinutes, isPast, startOfWeek } from 'date-fns';
 import { DateRange } from 'react-day-picker';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
@@ -147,6 +147,7 @@ type AdCampaign = {
     date: Timestamp;
     amountSpent: number;
     amountReturned: number;
+    conversationsStarted: number;
 };
 
 const getClientStatus = (dueDate: Date | Timestamp | null): ClientStatus => {
@@ -3958,16 +3959,54 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
 const AdsPage = ({ campaigns }: { campaigns: AdCampaign[] }) => {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingCampaign, setEditingCampaign] = useState<AdCampaign | null>(null);
+    const [filter, setFilter] = useState<'month' | 'week' | 'today' | 'year' | 'custom'>('month');
+    const [dateRange, setDateRange] = useState<DateRange | undefined>({
+        from: startOfMonth(new Date()),
+        to: endOfMonth(new Date()),
+    });
+
     const firestore = useFirestore();
     const { user } = useSecurity();
     const userId = user?.uid;
 
+    const filteredCampaigns = useMemo(() => {
+        if (!dateRange || !dateRange.from) return campaigns;
+    
+        const interval: Interval = {
+            start: startOfDay(dateRange.from),
+            end: dateRange.to ? endOfDay(dateRange.to) : endOfDay(dateRange.from),
+        };
+    
+        return campaigns.filter(campaign => {
+            const campaignDate = campaign.date.toDate();
+            return isWithinInterval(campaignDate, interval);
+        });
+    }, [campaigns, dateRange]);
+
+
     const metrics = useMemo(() => {
-        const totalSpent = campaigns.reduce((acc, c) => acc + c.amountSpent, 0);
-        const totalReturned = campaigns.reduce((acc, c) => acc + c.amountReturned, 0);
+        const totalSpent = filteredCampaigns.reduce((acc, c) => acc + c.amountSpent, 0);
+        const totalReturned = filteredCampaigns.reduce((acc, c) => acc + c.amountReturned, 0);
+        const totalConversations = filteredCampaigns.reduce((acc, c) => acc + c.conversationsStarted, 0);
         const netProfit = totalReturned - totalSpent;
-        return { totalSpent, totalReturned, netProfit };
-    }, [campaigns]);
+        const costPerMessage = totalSpent > 0 && totalConversations > 0 ? totalSpent / totalConversations : 0;
+        return { totalSpent, totalReturned, netProfit, totalConversations, costPerMessage };
+    }, [filteredCampaigns]);
+
+    const handleFilterChange = (value: 'today' | 'week' | 'month' | 'year' | 'custom') => {
+        const now = new Date();
+        setFilter(value);
+
+        if (value === 'today') {
+            setDateRange({ from: startOfDay(now), to: endOfDay(now) });
+        } else if (value === 'week') {
+            setDateRange({ from: startOfWeek(now), to: endOfDay(now) });
+        } else if (value === 'month') {
+            setDateRange({ from: startOfMonth(now), to: endOfMonth(now) });
+        } else if (value === 'year') {
+            setDateRange({ from: startOfYear(now), to: endOfYear(now) });
+        }
+    };
 
     const handleSaveCampaign = (campaignData: Omit<AdCampaign, 'id'>) => {
         if (!firestore || !userId) return;
@@ -3991,13 +4030,67 @@ const AdsPage = ({ campaigns }: { campaigns: AdCampaign[] }) => {
 
     return (
         <div className="w-full space-y-6">
-            <div className="text-center sm:text-left">
-                <h2 className="text-2xl font-bold">Relatório de Anúncios</h2>
-                <p className="text-muted-foreground">Monitore seus gastos e retornos.</p>
+             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className='text-center sm:text-left'>
+                    <h2 className="text-2xl font-bold">Relatório de Anúncios</h2>
+                    <p className="text-muted-foreground">Monitore seus gastos e retornos.</p>
+                </div>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <Select onValueChange={handleFilterChange} value={filter}>
+                        <SelectTrigger className="w-full sm:w-[130px]">
+                            <SelectValue placeholder="Intervalo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="today">Hoje</SelectItem>
+                            <SelectItem value="week">Esta Semana</SelectItem>
+                            <SelectItem value="month">Este Mês</SelectItem>
+                            <SelectItem value="year">Este Ano</SelectItem>
+                            <SelectItem value="custom">Personalizado</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    {filter === 'custom' && (
+                        <Popover>
+                            <PopoverTrigger asChild>
+                            <Button
+                                id="date"
+                                variant={"outline"}
+                                className={cn(
+                                "w-full sm:w-[260px] justify-start text-left font-normal",
+                                !dateRange && "text-muted-foreground"
+                                )}
+                            >
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {dateRange?.from ? (
+                                dateRange.to ? (
+                                    <>
+                                    {format(dateRange.from, "dd/MM/y")} -{" "}
+                                    {format(dateRange.to, "dd/MM/y")}
+                                    </>
+                                ) : (
+                                    format(dateRange.from, "dd/MM/y")
+                                )
+                                ) : (
+                                <span>Selecione um período</span>
+                                )}
+                            </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="end">
+                            <Calendar
+                                initialFocus
+                                mode="range"
+                                defaultMonth={dateRange?.from}
+                                selected={dateRange}
+                                onSelect={setDateRange}
+                                numberOfMonths={2}
+                            />
+                            </PopoverContent>
+                        </Popover>
+                    )}
+                </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-3">
-                <Card>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Gasto Total</CardTitle>
                         <DollarSign className="h-4 w-4 text-muted-foreground" />
@@ -4026,6 +4119,24 @@ const AdsPage = ({ campaigns }: { campaigns: AdCampaign[] }) => {
                         </div>
                     </CardContent>
                 </Card>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Conversas Iniciadas</CardTitle>
+                        <MessageCircle className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{metrics.totalConversations}</div>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Custo por Mensagem</CardTitle>
+                        <DollarSign className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{metrics.costPerMessage.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+                    </CardContent>
+                </Card>
             </div>
 
             <div className="flex justify-center sm:justify-start">
@@ -4045,15 +4156,21 @@ const AdsPage = ({ campaigns }: { campaigns: AdCampaign[] }) => {
                                 <TableHead>Data</TableHead>
                                 <TableHead>Valor Gasto</TableHead>
                                 <TableHead>Retorno</TableHead>
+                                <TableHead>Conversas</TableHead>
+                                <TableHead>Custo/Msg</TableHead>
                                 <TableHead className="text-right">Ações</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {campaigns.length > 0 ? campaigns.map(c => (
+                            {filteredCampaigns.length > 0 ? filteredCampaigns.map(c => {
+                                const costPerMessage = c.amountSpent > 0 && c.conversationsStarted > 0 ? c.amountSpent / c.conversationsStarted : 0;
+                                return (
                                 <TableRow key={c.id}>
                                     <TableCell>{format(c.date.toDate(), 'dd/MM/yyyy')}</TableCell>
                                     <TableCell className="text-red-500">{c.amountSpent.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</TableCell>
                                     <TableCell className="text-green-500">{c.amountReturned.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</TableCell>
+                                    <TableCell>{c.conversationsStarted}</TableCell>
+                                    <TableCell>{costPerMessage.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</TableCell>
                                     <TableCell className="text-right">
                                         <Button variant="ghost" size="icon" onClick={() => {setEditingCampaign(c); setIsDialogOpen(true);}}><Edit className="h-4 w-4" /></Button>
                                         <AlertDialog>
@@ -4073,9 +4190,9 @@ const AdsPage = ({ campaigns }: { campaigns: AdCampaign[] }) => {
                                         </AlertDialog>
                                     </TableCell>
                                 </TableRow>
-                            )) : (
+                            )}) : (
                                 <TableRow>
-                                    <TableCell colSpan={4} className="h-24 text-center">Nenhum registro de anúncio.</TableCell>
+                                    <TableCell colSpan={6} className="h-24 text-center">Nenhum registro de anúncio no período.</TableCell>
                                 </TableRow>
                             )}
                         </TableBody>
@@ -4097,6 +4214,7 @@ const AddEditAdCampaignDialog = ({ isOpen, onOpenChange, onSave, campaignToEdit 
     const [date, setDate] = useState<Date | undefined>(new Date());
     const [amountSpent, setAmountSpent] = useState('');
     const [amountReturned, setAmountReturned] = useState('');
+    const [conversationsStarted, setConversationsStarted] = useState('');
     const { toast } = useToast();
 
     useEffect(() => {
@@ -4105,10 +4223,12 @@ const AddEditAdCampaignDialog = ({ isOpen, onOpenChange, onSave, campaignToEdit 
                 setDate(campaignToEdit.date.toDate());
                 setAmountSpent(campaignToEdit.amountSpent.toString());
                 setAmountReturned(campaignToEdit.amountReturned.toString());
+                setConversationsStarted(campaignToEdit.conversationsStarted.toString());
             } else {
                 setDate(new Date());
                 setAmountSpent('');
                 setAmountReturned('');
+                setConversationsStarted('');
             }
         }
     }, [isOpen, campaignToEdit]);
@@ -4116,8 +4236,9 @@ const AddEditAdCampaignDialog = ({ isOpen, onOpenChange, onSave, campaignToEdit 
     const handleSave = () => {
         const spent = parseFloat(amountSpent);
         const returned = parseFloat(amountReturned);
+        const conversations = parseInt(conversationsStarted, 10);
 
-        if (!date || isNaN(spent) || isNaN(returned)) {
+        if (!date || isNaN(spent) || isNaN(returned) || isNaN(conversations)) {
             toast({ variant: 'destructive', title: 'Campos inválidos', description: 'Por favor, preencha todos os campos corretamente.' });
             return;
         }
@@ -4126,6 +4247,7 @@ const AddEditAdCampaignDialog = ({ isOpen, onOpenChange, onSave, campaignToEdit 
             date: Timestamp.fromDate(date),
             amountSpent: spent,
             amountReturned: returned,
+            conversationsStarted: conversations
         });
     };
 
@@ -4155,8 +4277,12 @@ const AddEditAdCampaignDialog = ({ isOpen, onOpenChange, onSave, campaignToEdit 
                         <Input id="amountSpent" type="number" value={amountSpent} onChange={e => setAmountSpent(e.target.value)} placeholder="Ex: 50.00" />
                     </div>
                     <div className="grid gap-2">
-                        <Label htmlFor="amountReturned">Valor Retornado</Label>
+                        <Label htmlFor="amountReturned">Retorno</Label>
                         <Input id="amountReturned" type="number" value={amountReturned} onChange={e => setAmountReturned(e.target.value)} placeholder="Ex: 150.00" />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="conversationsStarted">Conversas Iniciadas</Label>
+                        <Input id="conversationsStarted" type="number" value={conversationsStarted} onChange={e => setConversationsStarted(e.target.value)} placeholder="Ex: 10" />
                     </div>
                 </div>
                 <DialogFooter>

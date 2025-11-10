@@ -105,9 +105,10 @@
       "properties": {
         "date": { "type": "string", "format": "date-time", "description": "The date the campaign data was recorded." },
         "amountSpent": { "type": "number", "description": "The total amount of money spent on the campaign." },
-        "amountReturned": { "type": "number", "description": "The total amount of money returned from the campaign." }
+        "amountReturned": { "type": "number", "description": "The total amount of money returned from the campaign." },
+        "conversationsStarted": { "type": "number", "description": "Number of conversations started on that day." }
       },
-      "required": ["date", "amountSpent", "amountReturned"]
+      "required": ["date", "amountSpent", "amountReturned", "conversationsStarted"]
     }
   },
   "auth": {
