@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -48,7 +48,7 @@ import {
     TableRow,
   } from "@/components/ui/table"
 import { Textarea } from './ui/textarea';
-import { sendMessage, getStatus, sendToGroupWebhook, sendGroupMessage, sendScheduledGroupMessageWithImage } from '@/app/actions';
+import { sendMessage, getStatus, sendToGroupWebhook, sendGroupMessage, sendScheduledGroupMessageWithImage, generateTempEmail, loginTempEmail, listInbox, getMessageBody } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Loader } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from './ui/card';
@@ -148,6 +148,14 @@ type AdCampaign = {
     amountSpent: number;
     amountReturned: number;
     conversationsStarted: number;
+};
+
+type TempMessage = {
+    id: string;
+    from: { address: string; name: string };
+    subject: string;
+    intro: string;
+    body?: string;
 };
 
 const getClientStatus = (dueDate: Date | Timestamp | null): ClientStatus => {
@@ -555,6 +563,8 @@ const AppDashboard = () => {
                 return <GroupsPage scheduledMessages={scheduledMessages ?? []} />;
             case '/configuracoes':
                 return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} />;
+            case '/email-temp':
+                return <TempEmailPage />;
             default:
                 return <DashboardPage clients={transformedClients} rawClients={clients ?? []} />;
         }
@@ -677,6 +687,13 @@ const AppDashboard = () => {
                         </div>
                     </CollapsibleContent>
                 </Collapsible>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+                <Link href="/email-temp" onClick={(e) => { e.preventDefault(); startTransition(() => { window.history.pushState(null, '', '/email-temp'); }); }}>
+                    <SidebarMenuButton isActive={pathname === '/email-temp'}>
+                        <Mailbox/> Email Temp.
+                    </SidebarMenuButton>
+                </Link>
             </SidebarMenuItem>
             <SidebarMenuItem>
                 <Dialog>
@@ -4294,5 +4311,238 @@ const AddEditAdCampaignDialog = ({ isOpen, onOpenChange, onSave, campaignToEdit 
     );
 };
 
+const TempEmailPage = () => {
+    const { toast } = useToast();
+    const [isPending, startTransition] = useTransition();
+    const [account, setAccount] = useState<{ address: string; password: string } | null>(null);
+    const [token, setToken] = useState<string | null>(null);
+    const [messages, setMessages] = useState<TempMessage[]>([]);
+    const [status, setStatus] = useState<'idle' | 'monitoring' | 'error'>('idle');
+
+    const [loginAddress, setLoginAddress] = useState('');
+    const [loginPassword, setLoginPassword] = useState('');
+
+    const knownMessageIds = useRef(new Set<string>());
+
+    const handleGenerateEmail = () => {
+        startTransition(async () => {
+            try {
+                const newAccount = await generateTempEmail();
+                setAccount(newAccount);
+                toast({ title: "E-mail Gerado!", description: newAccount.address });
+                handleLogin(newAccount.address, newAccount.password);
+            } catch (error: any) {
+                toast({ variant: 'destructive', title: 'Erro ao Gerar E-mail', description: error.message });
+            }
+        });
+    };
+
+    const handleLogin = (address: string, pass: string) => {
+        startTransition(async () => {
+            try {
+                const jwtToken = await loginTempEmail(address, pass);
+                setToken(jwtToken);
+                setAccount({ address, password: pass });
+                setStatus('monitoring');
+                knownMessageIds.current.clear();
+                setMessages([]);
+                toast({ title: 'Login Efetuado!', description: 'Monitorando a caixa de entrada...' });
+            } catch (error: any) {
+                setStatus('error');
+                toast({ variant: 'destructive', title: 'Falha no Login', description: error.message });
+            }
+        });
+    };
+
+    const handleLogout = () => {
+        setToken(null);
+        setAccount(null);
+        setMessages([]);
+        setStatus('idle');
+        knownMessageIds.current.clear();
+        setLoginAddress('');
+        setLoginPassword('');
+    };
+
+    const stripHtml = (html: string): string => {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        return doc.body.textContent || "";
+    }
+
+    const fetchMessageBody = useCallback(async (token: string, msgId: string) => {
+        try {
+            const bodyData = await getMessageBody(token, msgId);
+            let bodyContent = '(sem conteúdo)';
+
+            if (bodyData.text) {
+                bodyContent = bodyData.text;
+            } else if (bodyData.html && bodyData.html.length > 0) {
+                bodyContent = stripHtml(bodyData.html.join('\n\n'));
+            }
+
+            setMessages(prev => prev.map(m => m.id === msgId ? { ...m, body: bodyContent } : m));
+        } catch (error: any) {
+            console.error(`Error fetching body for ${msgId}:`, error.message);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (status !== 'monitoring' || !token) {
+            return;
+        }
+
+        const interval = setInterval(async () => {
+            try {
+                const inbox = await listInbox(token);
+                let hasNewMessages = false;
+
+                const newMessages = inbox.filter((m: any) => m.id && !knownMessageIds.current.has(m.id));
+
+                if (newMessages.length > 0) {
+                    hasNewMessages = true;
+                    const formattedMessages: TempMessage[] = newMessages.map((m: any) => {
+                        knownMessageIds.current.add(m.id);
+                        return {
+                            id: m.id,
+                            from: m.from,
+                            subject: m.subject,
+                            intro: m.intro,
+                        };
+                    });
+                    
+                    setMessages(prev => [...formattedMessages, ...prev]);
+                    
+                    // Fetch bodies for new messages
+                    formattedMessages.forEach(msg => {
+                        fetchMessageBody(token, msg.id);
+                    });
+                }
+
+            } catch (error: any) {
+                console.error("Inbox monitoring error:", error.message);
+                if (error.message.includes('401')) {
+                    setStatus('error');
+                    setToken(null);
+                    toast({ variant: 'destructive', title: 'Sessão Expirada', description: 'Por favor, faça o login novamente.' });
+                }
+            }
+        }, 10000); // 10 seconds
+
+        return () => clearInterval(interval);
+
+    }, [status, token, fetchMessageBody, toast]);
+
+    const copyToClipboard = (text: string) => {
+        navigator.clipboard.writeText(text).then(() => {
+            toast({ title: 'Copiado!', description: `${text} copiado para a área de transferência.` });
+        });
+    };
+
+    return (
+        <div className="w-full space-y-6">
+            <div className='text-center sm:text-left'>
+                <h2 className="text-2xl font-bold">Email Temporário</h2>
+                <p className="text-muted-foreground">Gere e-mails temporários e visualize a caixa de entrada.</p>
+            </div>
+
+            <div className="grid lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-1 space-y-6">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Painel de Controle</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <Tabs defaultValue="generate">
+                                <TabsList className="grid w-full grid-cols-2">
+                                    <TabsTrigger value="generate">Gerar Novo</TabsTrigger>
+                                    <TabsTrigger value="login">Login</TabsTrigger>
+                                </TabsList>
+                                <TabsContent value="generate" className="pt-4">
+                                    <Button onClick={handleGenerateEmail} disabled={isPending} className="w-full">
+                                        {isPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
+                                        Gerar Novo E-mail
+                                    </Button>
+                                </TabsContent>
+                                <TabsContent value="login" className="pt-4 space-y-4">
+                                    <Input placeholder="E-mail" value={loginAddress} onChange={e => setLoginAddress(e.target.value)} disabled={isPending} />
+                                    <Input placeholder="Senha" type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} disabled={isPending} />
+                                    <Button onClick={() => handleLogin(loginAddress, loginPassword)} disabled={isPending} className="w-full">
+                                        {isPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
+                                        Login
+                                    </Button>
+                                </TabsContent>
+                            </Tabs>
+                        </CardContent>
+                    </Card>
+
+                    {account && (
+                        <Card className="animate-in fade-in-50">
+                            <CardHeader>
+                                <CardTitle>Credenciais</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div>
+                                    <Label>E-mail</Label>
+                                    <div className="flex items-center gap-2">
+                                        <Input value={account.address} readOnly />
+                                        <Button variant="ghost" size="icon" onClick={() => copyToClipboard(account.address)}><Copy /></Button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <Label>Senha</Label>
+                                    <div className="flex items-center gap-2">
+                                        <Input value={account.password} type="password" readOnly />
+                                        <Button variant="ghost" size="icon" onClick={() => copyToClipboard(account.password)}><Copy /></Button>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
+
+                </div>
+                <div className="lg:col-span-2 space-y-6">
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between">
+                            <div className="space-y-1">
+                                <CardTitle>Caixa de Entrada</CardTitle>
+                                {status === 'monitoring' && <CardDescription className="flex items-center gap-2 text-green-500"><RefreshCw className="h-4 w-4 animate-spin" />Monitorando...</CardDescription>}
+                                {status === 'idle' && <CardDescription>Aguardando login para começar a monitorar.</CardDescription>}
+                                {status === 'error' && <CardDescription className="text-destructive">Erro na conexão. Faça o login novamente.</CardDescription>}
+                            </div>
+                            <Button variant="destructive" size="icon" onClick={handleLogout} disabled={!token}><PowerOff/></Button>
+                        </CardHeader>
+                        <CardContent>
+                            <ScrollArea className="h-[500px] border rounded-lg p-4">
+                                {messages.length > 0 ? (
+                                    <div className="space-y-4">
+                                        {messages.map(msg => (
+                                            <Card key={msg.id}>
+                                                <CardHeader>
+                                                    <CardTitle className="text-base">{msg.from.name} <span className="text-sm font-normal text-muted-foreground">&lt;{msg.from.address}&gt;</span></CardTitle>
+                                                    <CardDescription>{msg.subject}</CardDescription>
+                                                </CardHeader>
+                                                <CardContent>
+                                                    <pre className="text-sm whitespace-pre-wrap font-sans">
+                                                        {msg.body || <Loader className="h-5 w-5 animate-spin"/>}
+                                                    </pre>
+                                                </CardContent>
+                                            </Card>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-center">
+                                        <Mailbox className="h-16 w-16 mb-4"/>
+                                        <h3 className="font-semibold">Caixa de entrada vazia</h3>
+                                        <p className="text-sm">Novas mensagens aparecerão aqui.</p>
+                                    </div>
+                                )}
+                            </ScrollArea>
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 export default AppDashboard;

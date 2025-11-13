@@ -7,48 +7,94 @@ const SEND_MESSAGE_URL = "https://n8nbeta.typeflow.app.br/webhook/235c79d0-71ed-
 const GROUP_WEBHOOK_URL = "https://n8nbeta.typeflow.app.br/webhook/9c5d6ca0-8469-48f3-9a40-115f4d712362";
 const SEND_GROUP_MESSAGE_URL = "https://n8nbeta.typeflow.app.br/webhook/9d074934-62ca-40b0-a31a-00fab0e04388";
 const SEND_SCHEDULED_GROUP_MESSAGE_WITH_IMAGE_URL = "https://n8nbeta.typeflow.app.br/webhook/6b70ac73-9025-4ace-b7c9-24db23376c4c";
+const MAIL_TM_BASE_URL = "https://api.mail.tm";
 
 
-async function postRequest(url: string, body: any = {}) {
+async function postRequest(url: string, body: any = {}, options: RequestInit = {}) {
   try {
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...options.headers,
       },
       body: JSON.stringify(body),
       cache: 'no-store',
+      ...options
     });
 
     if (!response.ok) {
         const errorBody = await response.text();
         console.error(`HTTP error! status: ${response.status}, body: ${errorBody}`);
-        throw new Error(`Request failed with status ${response.status}`);
+        let errorMessage = `Request failed with status ${response.status}`;
+        try {
+            const parsedError = JSON.parse(errorBody);
+            errorMessage = parsedError.message || parsedError.detail || errorMessage;
+        } catch (e) {
+            // Not a JSON error, use the text body if available
+            if (errorBody) errorMessage = errorBody;
+        }
+        throw new Error(errorMessage);
     }
 
-    // Handle cases where response might be empty
     const text = await response.text();
     if (!text) {
-        return { status: 'ok' }; // Or appropriate success indicator
+        return { status: 'ok' };
     }
 
     const jsonResponse = JSON.parse(text);
 
-    // Check for application-level errors from the webhook
     if (jsonResponse.status === 'error' || jsonResponse.message?.includes('error')) {
         throw new Error(jsonResponse.message || 'The webhook returned an unspecified error.');
     }
 
-
     return jsonResponse;
   } catch (error) {
-    console.error("Webhook request failed:", error);
+    console.error("Request failed:", error);
     if (error instanceof Error) {
         return { error: error.message };
     }
     return { error: "An unknown error occurred" };
   }
 }
+
+async function getRequest(url: string, options: RequestInit = {}) {
+    try {
+        const response = await fetch(url, {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json",
+                ...options.headers,
+            },
+            cache: 'no-store',
+            ...options
+        });
+
+        if (!response.ok) {
+            const errorBody = await response.text();
+            console.error(`HTTP error! status: ${response.status}, body: ${errorBody}`);
+            let errorMessage = `Request failed with status ${response.status}`;
+            try {
+                const parsedError = JSON.parse(errorBody);
+                errorMessage = parsedError.message || parsedError.detail || errorMessage;
+            } catch (e) {
+                if (errorBody) errorMessage = errorBody;
+            }
+            throw new Error(errorMessage);
+        }
+
+        const text = await response.text();
+        return text ? JSON.parse(text) : {};
+
+    } catch (error) {
+        console.error("GET Request failed:", error);
+        if (error instanceof Error) {
+            return { error: error.message };
+        }
+        return { error: "An unknown error occurred" };
+    }
+}
+
 
 export async function getQRCode() {
   return postRequest(CONNECT_URL);
@@ -79,4 +125,55 @@ export async function sendScheduledGroupMessageWithImage(groupId: string, messag
 
 export async function sendToGroupWebhook(groupCode: string) {
     return postRequest(GROUP_WEBHOOK_URL, { groupCode });
+}
+
+// Mail.tm actions
+
+export async function generateTempEmail() {
+    const rand = (n = 10, alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789') =>
+        Array.from({ length: n }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+
+    const domainResp = await getRequest(`${MAIL_TM_BASE_URL}/domains`);
+    if (domainResp.error || !domainResp['hydra:member']?.[0]?.domain) {
+        throw new Error('Could not fetch domains from mail.tm');
+    }
+    const domain = domainResp['hydra:member'][0].domain;
+
+    const address = `${rand()}@${domain}`;
+    const password = rand(12, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789');
+
+    const createResp = await postRequest(`${MAIL_TM_BASE_URL}/accounts`, { address, password });
+    if (createResp.error) {
+        throw new Error(createResp.error);
+    }
+    
+    return { address, password };
+}
+
+export async function loginTempEmail(address: string, password: string) {
+    const resp = await postRequest(`${MAIL_TM_BASE_URL}/token`, { address, password });
+    if (resp.error) {
+        throw new Error(resp.error);
+    }
+    return resp.token;
+}
+
+export async function listInbox(token: string) {
+    const resp = await getRequest(`${MAIL_TM_BASE_URL}/messages`, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+    if (resp.error) {
+        throw new Error(resp.error);
+    }
+    return resp['hydra:member'] || [];
+}
+
+export async function getMessageBody(token: string, messageId: string) {
+    const resp = await getRequest(`${MAILTM_BASE_URL}/messages/${messageId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+    if (resp.error) {
+        throw new Error(resp.error);
+    }
+    return resp;
 }
