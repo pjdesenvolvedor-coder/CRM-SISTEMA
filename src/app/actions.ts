@@ -24,6 +24,9 @@ async function postRequest(url: string, body: any = {}, options: RequestInit = {
     });
 
     if (!response.ok) {
+        if (response.status === 429) {
+            throw new Error("Muitas tentativas. Por favor, aguarde um minuto e tente novamente.");
+        }
         const errorBody = await response.text();
         console.error(`HTTP error! status: ${response.status}, body: ${errorBody}`);
         let errorMessage = `Request failed with status ${response.status}`;
@@ -71,6 +74,9 @@ async function getRequest(url: string, options: RequestInit = {}) {
         });
 
         if (!response.ok) {
+            if (response.status === 429) {
+                throw new Error("Muitas tentativas. Por favor, aguarde um minuto e tente novamente.");
+            }
             const errorBody = await response.text();
             console.error(`HTTP error! status: ${response.status}, body: ${errorBody}`);
             let errorMessage = `Request failed with status ${response.status}`;
@@ -169,7 +175,7 @@ export async function listInbox(token: string) {
 }
 
 export async function getMessageBody(token: string, messageId: string) {
-    const resp = await getRequest(`${MAILTM_BASE_URL}/messages/${messageId}`, {
+    const resp = await getRequest(`${MAIL_TM_BASE_URL}/messages/${messageId}`, {
         headers: { Authorization: `Bearer ${token}` }
     });
     if (resp.error) {

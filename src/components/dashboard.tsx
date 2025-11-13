@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -156,6 +156,13 @@ type TempMessage = {
     subject: string;
     intro: string;
     body?: string;
+};
+
+type SavedTempAccount = {
+    id: string;
+    address: string;
+    password: string;
+    savedAt: string; // ISO string
 };
 
 const getClientStatus = (dueDate: Date | Timestamp | null): ClientStatus => {
@@ -4322,7 +4329,38 @@ const TempEmailPage = () => {
     const [loginAddress, setLoginAddress] = useState('');
     const [loginPassword, setLoginPassword] = useState('');
 
+    const [savedAccounts, setSavedAccounts] = useState<SavedTempAccount[]>([]);
+
     const knownMessageIds = useRef(new Set<string>());
+
+    // Load saved accounts from localStorage on initial render
+    useEffect(() => {
+        const stored = localStorage.getItem('saved_temp_accounts');
+        if (stored) {
+            setSavedAccounts(JSON.parse(stored));
+        }
+    }, []);
+
+    const handleSaveAccount = () => {
+        if (!account) return;
+        const newAccountToSave: SavedTempAccount = {
+            id: uuidv4(),
+            ...account,
+            savedAt: new Date().toISOString(),
+        };
+
+        const updatedAccounts = [...savedAccounts, newAccountToSave];
+        setSavedAccounts(updatedAccounts);
+        localStorage.setItem('saved_temp_accounts', JSON.stringify(updatedAccounts));
+        toast({ title: "Conta Salva!", description: "A credencial foi salva localmente." });
+    };
+
+    const handleDeleteSavedAccount = (id: string) => {
+        const updatedAccounts = savedAccounts.filter(acc => acc.id !== id);
+        setSavedAccounts(updatedAccounts);
+        localStorage.setItem('saved_temp_accounts', JSON.stringify(updatedAccounts));
+        toast({ title: "Conta Removida", description: "A credencial foi removida." });
+    };
 
     const handleGenerateEmail = () => {
         startTransition(async () => {
@@ -4432,9 +4470,9 @@ const TempEmailPage = () => {
 
     }, [status, token, fetchMessageBody, toast]);
 
-    const copyToClipboard = (text: string) => {
+    const copyToClipboard = (text: string, subject: string = "Texto") => {
         navigator.clipboard.writeText(text).then(() => {
-            toast({ title: 'Copiado!', description: `${text} copiado para a área de transferência.` });
+            toast({ title: 'Copiado!', description: `${subject} copiado para a área de transferência.` });
         });
     };
 
@@ -4478,25 +4516,82 @@ const TempEmailPage = () => {
                     {account && (
                         <Card className="animate-in fade-in-50">
                             <CardHeader>
-                                <CardTitle>Credenciais</CardTitle>
+                                <div className="flex items-center justify-between">
+                                    <CardTitle>Credenciais</CardTitle>
+                                    <Button variant="outline" size="sm" onClick={handleSaveAccount}>
+                                        <Save className="mr-2 h-4 w-4" />
+                                        Salvar
+                                    </Button>
+                                </div>
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 <div>
                                     <Label>E-mail</Label>
                                     <div className="flex items-center gap-2">
                                         <Input value={account.address} readOnly />
-                                        <Button variant="ghost" size="icon" onClick={() => copyToClipboard(account.address)}><Copy /></Button>
+                                        <Button variant="ghost" size="icon" onClick={() => copyToClipboard(account.address, "E-mail")}><Copy /></Button>
                                     </div>
                                 </div>
                                 <div>
                                     <Label>Senha</Label>
                                     <div className="flex items-center gap-2">
                                         <Input value={account.password} type="password" readOnly />
-                                        <Button variant="ghost" size="icon" onClick={() => copyToClipboard(account.password)}><Copy /></Button>
+                                        <Button variant="ghost" size="icon" onClick={() => copyToClipboard(account.password, "Senha")}><Copy /></Button>
                                     </div>
                                 </div>
                             </CardContent>
                         </Card>
+                    )}
+
+                    {savedAccounts.length > 0 && (
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="secondary" className="w-full">
+                                    <Users className="mr-2 h-4 w-4" />
+                                    Ver Contas Salvas ({savedAccounts.length})
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent className="w-80" align="start">
+                                <DropdownMenuLabel>Contas Salvas</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                <ScrollArea className="h-auto max-h-64">
+                                    {savedAccounts.map(acc => (
+                                        <div key={acc.id} className="px-2 py-1.5">
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex-1 overflow-hidden">
+                                                    <p className="text-sm font-medium truncate">{acc.address}</p>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Salvo em: {format(new Date(acc.savedAt), 'dd/MM/yyyy')}
+                                                    </p>
+                                                </div>
+                                                <div className="flex items-center ml-2">
+                                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyToClipboard(`Email: ${acc.address}\nSenha: ${acc.password}`, "Credenciais")}>
+                                                        <Copy className="h-4 w-4" />
+                                                    </Button>
+                                                     <AlertDialog>
+                                                        <AlertDialogTrigger asChild>
+                                                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
+                                                                <Trash className="h-4 w-4" />
+                                                            </Button>
+                                                        </AlertDialogTrigger>
+                                                        <AlertDialogContent>
+                                                            <AlertDialogHeader>
+                                                                <AlertDialogTitle>Apagar esta credencial?</AlertDialogTitle>
+                                                                <AlertDialogDescription>Esta ação é permanente.</AlertDialogDescription>
+                                                            </AlertDialogHeader>
+                                                            <AlertDialogFooter>
+                                                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                                                <AlertDialogAction onClick={() => handleDeleteSavedAccount(acc.id)}>Apagar</AlertDialogAction>
+                                                            </AlertDialogFooter>
+                                                        </AlertDialogContent>
+                                                    </AlertDialog>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </ScrollArea>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                     )}
 
                 </div>
