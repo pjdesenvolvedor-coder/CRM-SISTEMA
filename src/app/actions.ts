@@ -22,32 +22,32 @@ async function postRequest(url: string, body: any = {}, options: RequestInit = {
       },
       body: JSON.stringify(body),
       cache: 'no-store',
+      next: { revalidate: 1 }, // Força a Vercel a não fazer cache
       ...options
     });
 
+    const responseBodyText = await response.text();
+
     if (!response.ok) {
+        console.error(`Mail.tm API Error! Status: ${response.status}, Body: ${responseBodyText}`);
         if (response.status === 429) {
             throw new Error("Muitas tentativas. Por favor, aguarde um minuto e tente novamente.");
         }
-        const errorBody = await response.text();
-        console.error(`HTTP error! status: ${response.status}, body: ${errorBody}`);
         let errorMessage = `Request failed with status ${response.status}`;
         try {
-            const parsedError = JSON.parse(errorBody);
+            const parsedError = JSON.parse(responseBodyText);
             errorMessage = parsedError.message || parsedError.detail || errorMessage;
         } catch (e) {
-            // Not a JSON error, use the text body if available
-            if (errorBody) errorMessage = errorBody;
+            if (responseBodyText) errorMessage = responseBodyText;
         }
         throw new Error(errorMessage);
     }
 
-    const text = await response.text();
-    if (!text) {
+    if (!responseBodyText) {
         return { status: 'ok' };
     }
 
-    const jsonResponse = JSON.parse(text);
+    const jsonResponse = JSON.parse(responseBodyText);
 
     if (jsonResponse.status === 'error' || jsonResponse.message?.includes('error')) {
         throw new Error(jsonResponse.message || 'The webhook returned an unspecified error.');
@@ -72,27 +72,28 @@ async function getRequest(url: string, options: RequestInit = {}) {
                 ...options.headers,
             },
             cache: 'no-store',
+            next: { revalidate: 1 }, // Força a Vercel a não fazer cache
             ...options
         });
 
+        const responseBodyText = await response.text();
+
         if (!response.ok) {
+            console.error(`Mail.tm API Error! Status: ${response.status}, Body: ${responseBodyText}`);
             if (response.status === 429) {
                 throw new Error("Muitas tentativas. Por favor, aguarde um minuto e tente novamente.");
             }
-            const errorBody = await response.text();
-            console.error(`HTTP error! status: ${response.status}, body: ${errorBody}`);
             let errorMessage = `Request failed with status ${response.status}`;
             try {
-                const parsedError = JSON.parse(errorBody);
+                const parsedError = JSON.parse(responseBodyText);
                 errorMessage = parsedError.message || parsedError.detail || errorMessage;
             } catch (e) {
-                if (errorBody) errorMessage = errorBody;
+                if (responseBodyText) errorMessage = responseBodyText;
             }
             throw new Error(errorMessage);
         }
 
-        const text = await response.text();
-        return text ? JSON.parse(text) : {};
+        return responseBodyText ? JSON.parse(responseBodyText) : {};
 
     } catch (error) {
         console.error("GET Request failed:", error);
