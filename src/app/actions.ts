@@ -1,6 +1,6 @@
 "use server";
 
-import { randomBytes } from 'crypto';
+import { randomBytes } from 'node:crypto';
 
 const CONNECT_URL = "https://n8nbeta.typeflow.app.br/webhook/aeb30639-baf0-4862-9f5f-a3cc468ab7c5";
 const STATUS_URL = "https://n8nbeta.typeflow.app.br/webhook/ef3b141f-ebd0-433c-bdfc-2fb112558ffd";
