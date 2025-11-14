@@ -1,7 +1,5 @@
 "use server";
 
-import { randomBytes } from 'node:crypto';
-
 const CONNECT_URL = "https://n8nbeta.typeflow.app.br/webhook/aeb30639-baf0-4862-9f5f-a3cc468ab7c5";
 const STATUS_URL = "https://n8nbeta.typeflow.app.br/webhook/ef3b141f-ebd0-433c-bdfc-2fb112558ffd";
 const DISCONNECT_URL = "https://n8nbeta.typeflow.app.br/webhook/2ac86d63-f7fc-4221-bbaf-efeecec33127";
@@ -9,48 +7,34 @@ const SEND_MESSAGE_URL = "https://n8nbeta.typeflow.app.br/webhook/235c79d0-71ed-
 const GROUP_WEBHOOK_URL = "https://n8nbeta.typeflow.app.br/webhook/9c5d6ca0-8469-48f3-9a40-115f4d712362";
 const SEND_GROUP_MESSAGE_URL = "https://n8nbeta.typeflow.app.br/webhook/9d074934-62ca-40b0-a31a-00fab0e04388";
 const SEND_SCHEDULED_GROUP_MESSAGE_WITH_IMAGE_URL = "https://n8nbeta.typeflow.app.br/webhook/6b70ac73-9025-4ace-b7c9-24db23376c4c";
-const MAIL_TM_BASE_URL = "https://api.mail.tm";
 
 
-async function postRequest(url: string, body: any = {}, options: RequestInit = {}) {
+async function postRequest(url: string, body: any = {}) {
   try {
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...options.headers,
       },
       body: JSON.stringify(body),
-      cache: 'no-store',
-      next: { revalidate: 1 }, // Força a Vercel a não fazer cache
-      ...options
+      cache: 'no-store', // Força a Vercel a não fazer cache
+      next: { revalidate: 1 } // Força a Vercel a não fazer cache
     });
 
-    const responseBodyText = await response.text();
+    // Se a resposta estiver vazia, retorne sucesso sem tentar fazer o parse
+    if (response.status === 200 && !response.headers.get('content-length')) {
+      return { status: 'ok' };
+    }
+
+    const jsonResponse = await response.json();
 
     if (!response.ok) {
-        console.error(`Mail.tm API Error! Status: ${response.status}, Body: ${responseBodyText}`);
-        if (response.status === 429) {
-            throw new Error("Muitas tentativas. Por favor, aguarde um minuto e tente novamente.");
-        }
-        let errorMessage = `Request failed with status ${response.status}`;
-        try {
-            const parsedError = JSON.parse(responseBodyText);
-            errorMessage = parsedError.message || parsedError.detail || errorMessage;
-        } catch (e) {
-            if (responseBodyText) errorMessage = responseBodyText;
-        }
-        throw new Error(errorMessage);
+      throw new Error(jsonResponse.message || `Request failed with status ${response.status}`);
     }
-
-    if (!responseBodyText) {
-        return { status: 'ok' };
-    }
-
-    const jsonResponse = JSON.parse(responseBodyText);
-
+    
+    // Verificando se a resposta da n8n indica um erro
     if (jsonResponse.status === 'error' || jsonResponse.message?.includes('error')) {
-        throw new Error(jsonResponse.message || 'The webhook returned an unspecified error.');
+      throw new Error(jsonResponse.message || 'The webhook returned an unspecified error.');
     }
 
     return jsonResponse;
@@ -62,48 +46,6 @@ async function postRequest(url: string, body: any = {}, options: RequestInit = {
     throw new Error("An unknown error occurred");
   }
 }
-
-async function getRequest(url: string, options: RequestInit = {}) {
-    try {
-        const response = await fetch(url, {
-            method: "GET",
-            headers: {
-                "Content-Type": "application/json",
-                ...options.headers,
-            },
-            cache: 'no-store',
-            next: { revalidate: 1 }, // Força a Vercel a não fazer cache
-            ...options
-        });
-
-        const responseBodyText = await response.text();
-
-        if (!response.ok) {
-            console.error(`Mail.tm API Error! Status: ${response.status}, Body: ${responseBodyText}`);
-            if (response.status === 429) {
-                throw new Error("Muitas tentativas. Por favor, aguarde um minuto e tente novamente.");
-            }
-            let errorMessage = `Request failed with status ${response.status}`;
-            try {
-                const parsedError = JSON.parse(responseBodyText);
-                errorMessage = parsedError.message || parsedError.detail || errorMessage;
-            } catch (e) {
-                if (responseBodyText) errorMessage = responseBodyText;
-            }
-            throw new Error(errorMessage);
-        }
-
-        return responseBodyText ? JSON.parse(responseBodyText) : {};
-
-    } catch (error) {
-        console.error("GET Request failed:", error);
-        if (error instanceof Error) {
-            throw new Error(error.message);
-        }
-        throw new Error("An unknown error occurred");
-    }
-}
-
 
 export async function getQRCode() {
   return postRequest(CONNECT_URL);
@@ -134,52 +76,4 @@ export async function sendScheduledGroupMessageWithImage(groupId: string, messag
 
 export async function sendToGroupWebhook(groupCode: string) {
     return postRequest(GROUP_WEBHOOK_URL, { groupCode });
-}
-
-// Mail.tm actions
-
-const rand = (n = 10, alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789') => {
-    const bytes = randomBytes(n);
-    let result = '';
-    for (let i = 0; i < n; i++) {
-        result += alphabet[bytes[i] % alphabet.length];
-    }
-    return result;
-};
-
-export async function generateTempEmail() {
-    // Step 1: Fetch domains
-    const domainResp = await getRequest(`${MAIL_TM_BASE_URL}/domains`);
-    if (!domainResp['hydra:member']?.[0]?.domain) {
-        throw new Error('Could not fetch domains from mail.tm');
-    }
-    const domain = domainResp['hydra:member'][0].domain;
-
-    // Step 2: Generate credentials locally after getting the domain
-    const address = `${rand()}@${domain}`;
-    const password = rand(12, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789');
-
-    // Step 3: Create the account with the API
-    await postRequest(`${MAIL_TM_BASE_URL}/accounts`, { address, password });
-    
-    return { address, password };
-}
-
-export async function loginTempEmail(address: string, password: string) {
-    const resp = await postRequest(`${MAIL_TM_BASE_URL}/token`, { address, password });
-    return resp.token;
-}
-
-export async function listInbox(token: string) {
-    const resp = await getRequest(`${MAIL_TM_BASE_URL}/messages`, {
-        headers: { Authorization: `Bearer ${token}` }
-    });
-    return resp['hydra:member'] || [];
-}
-
-export async function getMessageBody(token: string, messageId: string) {
-    const resp = await getRequest(`${MAIL_TM_BASE_URL}/messages/${messageId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-    });
-    return resp;
 }
