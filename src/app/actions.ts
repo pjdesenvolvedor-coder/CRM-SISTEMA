@@ -137,16 +137,16 @@ export async function sendToGroupWebhook(groupCode: string) {
 
 // Mail.tm actions
 
-export async function generateTempEmail() {
-    const rand = (n = 10, alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789') => {
-        const bytes = randomBytes(n);
-        let result = '';
-        for (let i = 0; i < n; i++) {
-            result += alphabet[bytes[i] % alphabet.length];
-        }
-        return result;
-    };
+const rand = (n = 10, alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789') => {
+    const bytes = randomBytes(n);
+    let result = '';
+    for (let i = 0; i < n; i++) {
+        result += alphabet[bytes[i] % alphabet.length];
+    }
+    return result;
+};
 
+export async function generateTempEmail() {
     const domainResp = await getRequest(`${MAIL_TM_BASE_URL}/domains`);
     if (domainResp.error || !domainResp['hydra:member']?.[0]?.domain) {
         throw new Error('Could not fetch domains from mail.tm');
