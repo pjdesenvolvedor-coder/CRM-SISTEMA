@@ -1,5 +1,7 @@
 "use server";
 
+import { randomBytes } from 'node:crypto';
+
 const CONNECT_URL = "https://n8nbeta.typeflow.app.br/webhook/aeb30639-baf0-4862-9f5f-a3cc468ab7c5";
 const STATUS_URL = "https://n8nbeta.typeflow.app.br/webhook/ef3b141f-ebd0-433c-bdfc-2fb112558ffd";
 const DISCONNECT_URL = "https://n8nbeta.typeflow.app.br/webhook/2ac86d63-f7fc-4221-bbaf-efeecec33127";
@@ -17,29 +19,36 @@ async function postRequest(url: string, body: any = {}) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
-      cache: 'no-store', // Força a Vercel a não fazer cache
-      next: { revalidate: 1 } // Força a Vercel a não fazer cache
+      cache: 'no-store',
+      next: { revalidate: 1 }
     });
 
-    // Se a resposta estiver vazia, retorne sucesso sem tentar fazer o parse
+    if (response.status === 429) {
+      console.error("Error 429: Too Many Requests.", { url });
+      throw new Error("Muitas tentativas. Por favor, aguarde um minuto e tente novamente.");
+    }
+
     if (response.status === 200 && !response.headers.get('content-length')) {
       return { status: 'ok' };
     }
 
     const jsonResponse = await response.json();
+    console.log(`Response from ${url}:`, jsonResponse);
+
 
     if (!response.ok) {
-      throw new Error(jsonResponse.message || `Request failed with status ${response.status}`);
+        console.error(`Request to ${url} failed with status ${response.status}`, jsonResponse);
+        throw new Error(jsonResponse.message || `Request failed with status ${response.status}`);
     }
     
-    // Verificando se a resposta da n8n indica um erro
     if (jsonResponse.status === 'error' || jsonResponse.message?.includes('error')) {
-      throw new Error(jsonResponse.message || 'The webhook returned an unspecified error.');
+        console.error(`Application-level error from ${url}:`, jsonResponse.message);
+        throw new Error(jsonResponse.message || 'The webhook returned an unspecified error.');
     }
 
     return jsonResponse;
   } catch (error) {
-    console.error("Request failed:", error);
+    console.error(`Request failed for URL: ${url}`, error);
     if (error instanceof Error) {
         throw new Error(error.message);
     }

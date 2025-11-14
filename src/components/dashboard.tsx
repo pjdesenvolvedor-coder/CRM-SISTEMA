@@ -75,6 +75,7 @@ import {
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { useSecurity } from './security-provider';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import { Progress } from './ui/progress';
 
 
 export type ClientStatus = 'ativo' | 'vencido' | 'cancelado';
@@ -554,7 +555,7 @@ const AppDashboard = () => {
             case '/configuracoes':
                 return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} />;
             case '/email-temp':
-                return <p>Página de Email Temporário em construção.</p>;
+                return <TempEmailPage />;
             default:
                 return <DashboardPage clients={transformedClients} rawClients={clients ?? []} />;
         }
@@ -677,6 +678,13 @@ const AppDashboard = () => {
                         </div>
                     </CollapsibleContent>
                 </Collapsible>
+            </SidebarMenuItem>
+             <SidebarMenuItem>
+                <Link href="/email-temp" onClick={(e) => { e.preventDefault(); startTransition(() => { window.history.pushState(null, '', '/email-temp'); }); }}>
+                    <SidebarMenuButton isActive={pathname === '/email-temp'}>
+                        <Mailbox/> Email Temp
+                    </SidebarMenuButton>
+                </Link>
             </SidebarMenuItem>
             <SidebarMenuItem>
                 <Dialog>
@@ -4293,5 +4301,388 @@ const AddEditAdCampaignDialog = ({ isOpen, onOpenChange, onSave, campaignToEdit 
         </Dialog>
     );
 };
+
+// Types for mail.tm
+type TempMessage = {
+    id: string;
+    from: { address: string; name: string };
+    subject: string;
+    intro: string;
+    createdAt: string;
+    body?: string; // Will be fetched separately
+};
+
+type SavedTempAccount = {
+    email: string;
+    pass: string;
+    savedAt: string;
+};
+
+const TempEmailPage = () => {
+    const { toast } = useToast();
+    const [isPending, setIsPending] = useState(false);
+    const [status, setStatus] = useState<'idle' | 'monitoring' | 'error'>('idle');
+    
+    // Credentials
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [token, setToken] = useState('');
+
+    // Inbox
+    const [messages, setMessages] = useState<TempMessage[]>([]);
+    const [seenMessageIds, setSeenMessageIds] = useState<Set<string>>(new Set());
+
+    // Saved accounts
+    const [savedAccounts, setSavedAccounts] = useState<SavedTempAccount[]>([]);
+
+    const MOCK_API_URL = "https://api.mail.tm";
+
+    // Load saved accounts from localStorage on initial render
+    useEffect(() => {
+        try {
+            const stored = localStorage.getItem('temp_accounts');
+            if (stored) {
+                setSavedAccounts(JSON.parse(stored));
+            }
+        } catch (e) {
+            console.error("Failed to load saved accounts from localStorage", e);
+        }
+    }, []);
+
+    // API calls now happen on the client
+    const apiRequest = async (url: string, options: RequestInit = {}) => {
+        const response = await fetch(url, options);
+        if (response.status === 429) {
+            throw new Error("Muitas tentativas. Por favor, aguarde um minuto e tente novamente.");
+        }
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ message: `Request failed with status ${response.status}` }));
+            throw new Error(errorData.message || 'Ocorreu um erro desconhecido.');
+        }
+        if (response.headers.get('content-length') === '0' || response.status === 204) {
+            return null;
+        }
+        return response.json();
+    };
+    
+    const generateAndLogin = async () => {
+        setIsPending(true);
+        logout(); // Clear previous session
+        
+        try {
+            // 1. Get a domain
+            const domainsData = await apiRequest(`${MOCK_API_URL}/domains`);
+            const domain = domainsData['hydra:member']?.[0]?.domain;
+            if (!domain) throw new Error("Nenhum domínio disponível.");
+            
+            // 2. Generate credentials
+            const rand = (n: number) => Array(n).fill(0).map(() => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)]).join('');
+            const newEmail = `${rand(10)}@${domain}`;
+            const newPassword = rand(12);
+
+            // 3. Create account
+            await apiRequest(`${MOCK_API_URL}/accounts`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ address: newEmail, password: newPassword }),
+            });
+
+            // 4. Login
+            const tokenData = await apiRequest(`${MOCK_API_URL}/token`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ address: newEmail, password: newPassword }),
+            });
+
+            setEmail(newEmail);
+            setPassword(newPassword);
+            setToken(tokenData.token);
+            setStatus('monitoring');
+            toast({ title: "Sucesso!", description: "E-mail temporário gerado e monitorando." });
+
+        } catch (error) {
+            console.error(error);
+            toast({ variant: 'destructive', title: 'Erro ao Gerar E-mail', description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
+            setStatus('error');
+        } finally {
+            setIsPending(false);
+        }
+    };
+
+    const loginWithCredentials = async (emailToLogin: string, passToLogin: string) => {
+        setIsPending(true);
+        logout();
+        try {
+            const tokenData = await apiRequest(`${MOCK_API_URL}/token`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ address: emailToLogin, password: passToLogin }),
+            });
+            
+            setEmail(emailToLogin);
+            setPassword(passToLogin);
+            setToken(tokenData.token);
+            setStatus('monitoring');
+            toast({ title: "Login Efetuado!", description: "Monitorando caixa de entrada." });
+        } catch (error) {
+            console.error(error);
+            toast({ variant: 'destructive', title: 'Falha no Login', description: error instanceof Error ? error.message : "Credenciais inválidas ou erro na API." });
+            setStatus('error');
+        } finally {
+            setIsPending(false);
+        }
+    };
+
+    const logout = () => {
+        setEmail('');
+        setPassword('');
+        setToken('');
+        setMessages([]);
+        setSeenMessageIds(new Set());
+        setStatus('idle');
+    };
+
+    const saveCurrentCredentials = () => {
+        if (!email || !password) return;
+        const newAccount: SavedTempAccount = { email, pass: password, savedAt: new Date().toISOString() };
+        
+        const newSavedAccounts = [newAccount, ...savedAccounts.filter(acc => acc.email !== email)];
+        setSavedAccounts(newSavedAccounts);
+
+        try {
+            localStorage.setItem('temp_accounts', JSON.stringify(newSavedAccounts));
+            toast({ title: 'Credenciais Salvas!', description: 'Você pode acessar esta conta mais tarde.' });
+        } catch (e) {
+            console.error("Failed to save accounts", e);
+            toast({ variant: 'destructive', title: 'Erro ao Salvar', description: 'Não foi possível salvar a conta.' });
+        }
+    };
+
+    const deleteSavedAccount = (emailToDelete: string) => {
+        const newSavedAccounts = savedAccounts.filter(acc => acc.email !== emailToDelete);
+        setSavedAccounts(newSavedAccounts);
+        try {
+            localStorage.setItem('temp_accounts', JSON.stringify(newSavedAccounts));
+            toast({ title: 'Conta Removida', description: 'A conta foi removida da sua lista.' });
+        } catch (e) {
+            console.error("Failed to delete account", e);
+        }
+    };
+    
+    // Polling effect for checking messages
+    useEffect(() => {
+        if (status !== 'monitoring' || !token) {
+            return;
+        }
+
+        const fetchMessages = async () => {
+            try {
+                const inboxData = await apiRequest(`${MOCK_API_URL}/messages`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const inboxMessages: TempMessage[] = inboxData['hydra:member'];
+
+                const newMessages = inboxMessages.filter(msg => !seenMessageIds.has(msg.id));
+
+                if (newMessages.length > 0) {
+                    const messagesWithBody = await Promise.all(newMessages.map(async (msg) => {
+                        try {
+                            const msgData = await apiRequest(`${MOCK_API_URL}/messages/${msg.id}`, {
+                                headers: { 'Authorization': `Bearer ${token}` }
+                            });
+                             const body = msgData.text || (msgData.html && msgData.html.join('\n\n').replace(/<[^>]*>/g, '')) || msgData.intro || '(sem conteúdo)';
+                            return { ...msg, body };
+                        } catch {
+                            return { ...msg, body: '(Falha ao carregar conteúdo)' };
+                        }
+                    }));
+
+                    setMessages(prev => [...messagesWithBody, ...prev]);
+                    setSeenMessageIds(prev => new Set([...prev, ...newMessages.map(m => m.id)]));
+                }
+            } catch (error) {
+                console.error("Error fetching messages:", error);
+                // Optional: Stop monitoring on error or just log it
+                // setStatus('error');
+            }
+        };
+
+        const intervalId = setInterval(fetchMessages, 10000); // Poll every 10s
+        fetchMessages(); // Initial fetch
+
+        return () => clearInterval(intervalId);
+    }, [status, token, seenMessageIds]);
+
+    return (
+        <div className="w-full space-y-6">
+            <div className='text-center sm:text-left'>
+                <h2 className="text-2xl font-bold">E-mail Temporário</h2>
+                <p className="text-muted-foreground">Gere e-mails temporários e visualize a caixa de entrada.</p>
+            </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Control Panel */}
+                <div className="lg:col-span-1 space-y-6">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Painel de Controle</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <Button onClick={generateAndLogin} disabled={isPending || status === 'monitoring'} className="w-full">
+                                {isPending ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
+                                Gerar Novo E-mail
+                            </Button>
+                        </CardContent>
+                        <CardFooter>
+                            <LoginWithSaved onLogin={loginWithCredentials} savedAccounts={savedAccounts} onDelete={deleteSavedAccount} />
+                        </CardFooter>
+                    </Card>
+
+                    {email && (
+                         <Card>
+                            <CardHeader>
+                                <CardTitle>Credenciais Atuais</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div>
+                                    <Label>E-mail</Label>
+                                    <div className="flex items-center gap-2">
+                                        <Input value={email} readOnly />
+                                        <Button variant="ghost" size="icon" onClick={() => navigator.clipboard.writeText(email)}><Copy className="h-4 w-4" /></Button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <Label>Senha</Label>
+                                    <div className="flex items-center gap-2">
+                                        <Input value={password} readOnly type="password" />
+                                        <Button variant="ghost" size="icon" onClick={() => navigator.clipboard.writeText(password)}><Copy className="h-4 w-4" /></Button>
+                                    </div>
+                                </div>
+                            </CardContent>
+                            <CardFooter className="flex-col gap-2">
+                                <Button onClick={saveCurrentCredentials} className="w-full"><Save className="mr-2 h-4 w-4" />Salvar Credenciais</Button>
+                                <Button onClick={logout} variant="destructive" className="w-full"><PowerOff className="mr-2 h-4 w-4" />Deslogar</Button>
+                            </CardFooter>
+                        </Card>
+                    )}
+                </div>
+
+                {/* Inbox Panel */}
+                <div className="lg:col-span-2">
+                    <Card className="min-h-[400px]">
+                        <CardHeader>
+                             <div className="flex items-center justify-between">
+                                <CardTitle>Caixa de Entrada</CardTitle>
+                                {status === 'monitoring' && (
+                                    <div className="flex items-center gap-2 text-sm text-green-500">
+                                        <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                                        Monitorando...
+                                    </div>
+                                )}
+                                 {status === 'idle' && (
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                        <div className="h-2 w-2 rounded-full bg-gray-400" />
+                                        Aguardando login
+                                    </div>
+                                )}
+                                 {status === 'error' && (
+                                    <div className="flex items-center gap-2 text-sm text-destructive">
+                                        <div className="h-2 w-2 rounded-full bg-red-500" />
+                                        Erro
+                                    </div>
+                                )}
+                             </div>
+                        </CardHeader>
+                        <CardContent>
+                            <ScrollArea className="h-[500px] pr-4 -mr-4">
+                                {messages.length > 0 ? (
+                                    <div className="space-y-4">
+                                        {messages.map(msg => (
+                                            <Collapsible key={msg.id} className="border-b pb-4">
+                                                <CollapsibleTrigger className="w-full">
+                                                    <div className="flex justify-between items-start text-left">
+                                                        <div className='flex-1 min-w-0'>
+                                                            <p className="text-sm font-semibold truncate">{msg.from.name || msg.from.address}</p>
+                                                            <p className="text-sm text-muted-foreground truncate">{msg.subject}</p>
+                                                        </div>
+                                                        <div className="text-xs text-muted-foreground ml-2 flex-shrink-0">
+                                                            {format(new Date(msg.createdAt), 'dd/MM HH:mm')}
+                                                            <ChevronDown className="inline-block h-4 w-4 ml-1 transition-transform ui-open:rotate-180" />
+                                                        </div>
+                                                    </div>
+                                                </CollapsibleTrigger>
+                                                <CollapsibleContent className="mt-4 text-sm text-muted-foreground whitespace-pre-wrap font-mono bg-muted/50 p-4 rounded-md">
+                                                    {msg.body}
+                                                </CollapsibleContent>
+                                            </Collapsible>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center text-center h-80">
+                                        <Mailbox className="h-16 w-16 text-muted-foreground/50 mb-4" />
+                                        <p className="text-muted-foreground">Nenhuma mensagem ainda.</p>
+                                        {status === 'monitoring' && <p className="text-sm text-muted-foreground">Aguardando novas mensagens...</p>}
+                                        {status === 'idle' && <p className="text-sm text-muted-foreground">Gere um e-mail para começar.</p>}
+                                    </div>
+                                )}
+                            </ScrollArea>
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const LoginWithSaved = ({ onLogin, savedAccounts, onDelete }: { onLogin: (email: string, pass: string) => void; savedAccounts: SavedTempAccount[]; onDelete: (email: string) => void }) => {
+    if (savedAccounts.length === 0) return null;
+
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="w-full">
+                    <LogIn className="mr-2 h-4 w-4" /> Ver Contas Salvas
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-80">
+                <DropdownMenuLabel>Contas Salvas</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <ScrollArea className="h-[200px]">
+                    {savedAccounts.map(acc => (
+                        <DropdownMenuItem key={acc.email} onSelect={(e) => e.preventDefault()} className="flex justify-between items-center">
+                            <div className="flex-1 cursor-pointer" onClick={() => onLogin(acc.email, acc.pass)}>
+                                <p className="font-semibold truncate">{acc.email}</p>
+                                <p className="text-xs text-muted-foreground">Salvo em: {format(new Date(acc.savedAt), 'dd/MM/yy')}</p>
+                            </div>
+                            <div className="flex">
+                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigator.clipboard.writeText(`Email: ${acc.email}\nSenha: ${acc.pass}`)}>
+                                    <Copy className="h-4 w-4" />
+                                </Button>
+                                <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
+                                            <Trash className="h-4 w-4" />
+                                        </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>Apagar conta salva?</AlertDialogTitle>
+                                            <AlertDialogDescription>A conta {acc.email} será removida da lista. Essa ação não pode ser desfeita.</AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                            <AlertDialogAction onClick={() => onDelete(acc.email)}>Apagar</AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
+                            </div>
+                        </DropdownMenuItem>
+                    ))}
+                </ScrollArea>
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
+};
+
 
 export default AppDashboard;
