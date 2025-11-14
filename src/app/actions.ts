@@ -1,5 +1,7 @@
 "use server";
 
+import { randomBytes } from 'crypto';
+
 const CONNECT_URL = "https://n8nbeta.typeflow.app.br/webhook/aeb30639-baf0-4862-9f5f-a3cc468ab7c5";
 const STATUS_URL = "https://n8nbeta.typeflow.app.br/webhook/ef3b141f-ebd0-433c-bdfc-2fb112558ffd";
 const DISCONNECT_URL = "https://n8nbeta.typeflow.app.br/webhook/2ac86d63-f7fc-4221-bbaf-efeecec33127";
@@ -136,8 +138,14 @@ export async function sendToGroupWebhook(groupCode: string) {
 // Mail.tm actions
 
 export async function generateTempEmail() {
-    const rand = (n = 10, alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789') =>
-        Array.from({ length: n }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+    const rand = (n = 10, alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789') => {
+        const bytes = randomBytes(n);
+        let result = '';
+        for (let i = 0; i < n; i++) {
+            result += alphabet[bytes[i] % alphabet.length];
+        }
+        return result;
+    };
 
     const domainResp = await getRequest(`${MAIL_TM_BASE_URL}/domains`);
     if (domainResp.error || !domainResp['hydra:member']?.[0]?.domain) {
