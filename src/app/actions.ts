@@ -57,9 +57,9 @@ async function postRequest(url: string, body: any = {}, options: RequestInit = {
   } catch (error) {
     console.error("Request failed:", error);
     if (error instanceof Error) {
-        return { error: error.message };
+        throw new Error(error.message);
     }
-    return { error: "An unknown error occurred" };
+    throw new Error("An unknown error occurred");
   }
 }
 
@@ -97,9 +97,9 @@ async function getRequest(url: string, options: RequestInit = {}) {
     } catch (error) {
         console.error("GET Request failed:", error);
         if (error instanceof Error) {
-            return { error: error.message };
+            throw new Error(error.message);
         }
-        return { error: "An unknown error occurred" };
+        throw new Error("An unknown error occurred");
     }
 }
 
@@ -147,28 +147,25 @@ const rand = (n = 10, alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789') => {
 };
 
 export async function generateTempEmail() {
+    // Step 1: Fetch domains
     const domainResp = await getRequest(`${MAIL_TM_BASE_URL}/domains`);
-    if (domainResp.error || !domainResp['hydra:member']?.[0]?.domain) {
+    if (!domainResp['hydra:member']?.[0]?.domain) {
         throw new Error('Could not fetch domains from mail.tm');
     }
     const domain = domainResp['hydra:member'][0].domain;
 
+    // Step 2: Generate credentials locally after getting the domain
     const address = `${rand()}@${domain}`;
     const password = rand(12, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789');
 
-    const createResp = await postRequest(`${MAIL_TM_BASE_URL}/accounts`, { address, password });
-    if (createResp.error) {
-        throw new Error(createResp.error);
-    }
+    // Step 3: Create the account with the API
+    await postRequest(`${MAIL_TM_BASE_URL}/accounts`, { address, password });
     
     return { address, password };
 }
 
 export async function loginTempEmail(address: string, password: string) {
     const resp = await postRequest(`${MAIL_TM_BASE_URL}/token`, { address, password });
-    if (resp.error) {
-        throw new Error(resp.error);
-    }
     return resp.token;
 }
 
@@ -176,9 +173,6 @@ export async function listInbox(token: string) {
     const resp = await getRequest(`${MAIL_TM_BASE_URL}/messages`, {
         headers: { Authorization: `Bearer ${token}` }
     });
-    if (resp.error) {
-        throw new Error(resp.error);
-    }
     return resp['hydra:member'] || [];
 }
 
@@ -186,8 +180,5 @@ export async function getMessageBody(token: string, messageId: string) {
     const resp = await getRequest(`${MAIL_TM_BASE_URL}/messages/${messageId}`, {
         headers: { Authorization: `Bearer ${token}` }
     });
-    if (resp.error) {
-        throw new Error(resp.error);
-    }
     return resp;
 }
