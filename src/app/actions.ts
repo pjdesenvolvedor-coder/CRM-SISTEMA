@@ -14,10 +14,10 @@ const SEND_SCHEDULED_GROUP_MESSAGE_WITH_IMAGE_URL = "https://n8nbeta.typeflow.ap
 async function postRequest(url: string, body: any = {}, token?: string) {
   try {
     // Add the token to the body if it exists
-    const requestBody = {
-        ...body,
-        ...(token && { token }),
-    };
+    let requestBody = { ...body };
+    if (token) {
+        requestBody.token = token;
+    }
 
     const response = await fetch(url, {
       method: "POST",
@@ -27,18 +27,17 @@ async function postRequest(url: string, body: any = {}, token?: string) {
       body: JSON.stringify(requestBody),
     });
 
-    // The QR code response might not have a body, but is still valid.
     if (response.status === 200 && !response.headers.get('content-length')) {
-      return { status: 'ok' }; // Assume success for empty 200 responses
+      return { status: 'ok' };
     }
-
-    const jsonResponse = await response.json();
-    console.log(`Response from ${url}:`, jsonResponse);
-
-    if (jsonResponse.status === 429 || response.status === 429) {
-      console.error("Error 429: Too Many Requests.", { url, responseStatus: response.status, jsonResponse });
+    
+    if (response.status === 429) {
+      console.error("Error 429: Too Many Requests.", { url, responseStatus: response.status });
       throw new Error("Muitas tentativas. Por favor, aguarde um minuto e tente novamente.");
     }
+    
+    const jsonResponse = await response.json();
+    console.log(`Response from ${url}:`, jsonResponse);
     
     if (!response.ok) {
         console.error(`Request to ${url} failed with status ${response.status}`, jsonResponse);
