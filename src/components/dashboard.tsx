@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogIn, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -495,7 +495,7 @@ const AppDashboard = () => {
     }, [firestore, userId]);
 
     useEffect(() => {
-        if (!scheduledMessages || !firestore || !userId) {
+        if (!scheduledMessages || !firestore || !userId || !userToken) {
             return;
         }
     
@@ -505,11 +505,9 @@ const AppDashboard = () => {
             pendingMessages.forEach(msg => {
                 const sendAt = msg.sendAt.toDate();
                 if (isPast(sendAt)) {
-                    const sendPromise = msg.imageBase64 
-                        ? sendScheduledGroupMessageWithImage(msg.groupId, msg.message, msg.imageBase64, userToken?.token)
-                        : sendGroupMessage(msg.groupId, msg.message, userToken?.token);
-    
-                    sendPromise.then(result => {
+                    // Always use the webhook for sending with an image, just pass an empty string if no image exists.
+                    sendScheduledGroupMessageWithImage(msg.groupId, msg.message, msg.imageBase64 || '', userToken?.token)
+                    .then(result => {
                         if (result.error) {
                             throw new Error(result.error);
                         }
@@ -775,7 +773,7 @@ const AppDashboard = () => {
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={logout}>
-                        <LogOut className="mr-2 h-4 w-4" />
+                        <LogIn className="mr-2 h-4 w-4" />
                         <span>Sair</span>
                     </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -2212,7 +2210,7 @@ const SettingsPage = ({ subscriptions, allClients, connection }: { subscriptions
                 <CardHeader>
                     <CardTitle>Token de Conexão</CardTitle>
                     <CardDescription>
-                        Esta mensagem (token) será enviada em todas as requisições de webhook.
+                        Esta mensagem (token) será enviada em todas as requisições de webhook com o nome `chave`.
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
