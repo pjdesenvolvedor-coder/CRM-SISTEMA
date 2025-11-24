@@ -1,8 +1,6 @@
 "use server";
 
-import { randomBytes } from 'node:crypto';
-
-const CONNECT_URL = "https://n8nbeta.typeflow.app.br/webhook-test/aeb30639-baf0-4862-9f5f-a3cc468ab7c5";
+const CONNECT_URL = "https://n8nbeta.typeflow.app.br/webhook/9c5d6ca0-8469-48f3-9a40-115f4d712362";
 const STATUS_URL = "https://n8nbeta.typeflow.app.br/webhook/ef3b141f-ebd0-433c-bdfc-2fb112558ffd";
 const DISCONNECT_URL = "https://n8nbeta.typeflow.app.br/webhook/2ac86d63-f7fc-4221-bbaf-efeecec33127";
 const SEND_MESSAGE_URL = "https://n8nbeta.typeflow.app.br/webhook/235c79d0-71ed-4a43-aa3c-5c0cf1de2580";
@@ -86,3 +84,4 @@ export async function sendScheduledGroupMessageWithImage(groupId: string, messag
 export async function sendToGroupWebhook(groupCode: string, token?: string) {
     return postRequest(GROUP_WEBHOOK_URL, { groupCode }, token);
 }
+
