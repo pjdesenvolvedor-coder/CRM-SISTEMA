@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, LogIn, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogIn, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -54,7 +54,7 @@ import { Loader } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from './ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from './ui/dropdown-menu';
-import { addDays, addMonths, format, isFuture, differenceInDays, startOfDay, subDays, isToday, startOfMonth, endOfMonth, startOfYear, endOfYear, isWithinInterval, endOfDay, setHours, setMinutes, setSeconds, getHours, getMinutes, isPast, startOfWeek } from 'date-fns';
+import { addDays, addMonths, format, isFuture, differenceInDays, startOfDay, subDays, isToday, startOfMonth, endOfMonth, startOfYear, endOfYear, isWithinInterval, endOfDay, setHours, setMinutes, setSeconds, getHours, getMinutes, isPast, startOfWeek, isSameDay } from 'date-fns';
 import { DateRange } from 'react-day-picker';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
@@ -147,6 +147,11 @@ type AdCampaign = {
     amountSpent: number;
     amountReturned: number;
     conversationsStarted: number;
+};
+
+type UserConnection = {
+    id: string;
+    token: string;
 };
 
 const getClientStatus = (dueDate: Date | Timestamp | null): ClientStatus => {
@@ -317,6 +322,10 @@ const AppDashboard = () => {
     const adCampaignsQuery = useMemoFirebase(() => (firestore && userId) ? query(collection(firestore, 'users', userId, 'adCampaigns'), orderBy('date', 'desc')) : null, [firestore, userId]);
     const { data: adCampaigns, isLoading: adCampaignsLoading } = useCollection<AdCampaign>(adCampaignsQuery);
 
+    const userConnectionQuery = useMemoFirebase(() => (firestore && userId) ? collection(firestore, 'users', userId, 'user_connection') : null, [firestore, userId]);
+    const { data: userConnection, isLoading: userConnectionLoading } = useCollection<UserConnection>(userConnectionQuery);
+    const userToken = useMemo(() => userConnection?.[0], [userConnection]);
+
     const [supportClient, setSupportClient] = useState<Client | null>(null);
 
     const transformedClients = React.useMemo(() => {
@@ -412,12 +421,13 @@ const AppDashboard = () => {
             const now = new Date();
             
             transformedClients.forEach(client => {
-                
-                // --- Due Date Logic ---
-                if (automationSettings.isEnabled && client.dueDate) {
-                    const dueDate = new Date(client.dueDate as Date);
-                    const lastNotificationDate = client.lastNotificationSent instanceof Timestamp ? client.lastNotificationSent.toDate() : client.lastNotificationSent;
-                    if (isPast(dueDate) && (!lastNotificationDate || lastNotificationDate < dueDate)) {
+                const clientDueDate = client.dueDate ? new Date(client.dueDate as Date) : null;
+                const lastNotificationDate = client.lastNotificationSent instanceof Timestamp ? client.lastNotificationSent.toDate() : null;
+
+                // --- Due Date Logic (New) ---
+                if (automationSettings.isEnabled && clientDueDate) {
+                    // Check if due date is today and if a notification for today hasn't been sent.
+                    if (isToday(clientDueDate) && (!lastNotificationDate || !isSameDay(lastNotificationDate, clientDueDate))) {
                         sendAutomationMessage(client, automationSettings.message, 'due');
                     }
                 }
@@ -553,7 +563,7 @@ const AppDashboard = () => {
             case '/automacao/grupos':
                 return <GroupsPage scheduledMessages={scheduledMessages ?? []} />;
             case '/configuracoes':
-                return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} />;
+                return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} connection={userToken} />;
             case '/email-temp':
                 return <TempEmailPage />;
             default:
@@ -561,7 +571,7 @@ const AppDashboard = () => {
         }
     };
     
-    const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading || adCampaignsLoading;
+    const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading || adCampaignsLoading || userConnectionLoading;
 
     if (isLoading) {
         return (
@@ -759,7 +769,7 @@ const AppDashboard = () => {
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={logout}>
-                        <LogOut className="mr-2 h-4 w-4" />
+                        <LogIn className="mr-2 h-4 w-4" />
                         <span>Sair</span>
                     </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -793,19 +803,28 @@ const DashboardPage = ({ clients, rawClients }: { clients: Client[], rawClients:
         from: startOfMonth(new Date()),
         to: endOfMonth(new Date()),
     });
+    const [clientListModal, setClientListModal] = useState<{ title: string; clients: Client[] } | null>(null);
 
-    const metrics = useMemo(() => {
-        const totalClients = clients.length;
-        const activeClientsList = clients.filter(c => c.status === 'ativo');
-        const overdueClientsList = clients.filter(c => c.status === 'vencido' || c.status === 'cancelado');
-        const dueTodayList = clients.filter(c => c.dueDate && isToday(new Date(c.dueDate as Date)));
-        const dueIn3DaysList = clients.filter(c => {
+    const { 
+        activeClientsList, 
+        overdueClientsList, 
+        dueTodayList, 
+        dueIn3DaysList 
+    } = useMemo(() => {
+        const active = clients.filter(c => c.status === 'ativo');
+        const overdue = clients.filter(c => c.status === 'vencido' || c.status === 'cancelado');
+        const today = clients.filter(c => c.dueDate && isToday(new Date(c.dueDate as Date)));
+        const in3Days = clients.filter(c => {
             if (!c.dueDate) return false;
             const dueDate = startOfDay(new Date(c.dueDate as Date));
             const daysDiff = differenceInDays(dueDate, startOfDay(new Date()));
             return daysDiff > 0 && daysDiff <= 3;
         });
+        return { activeClientsList: active, overdueClientsList: overdue, dueTodayList: today, dueIn3DaysList: in3Days };
+    }, [clients]);
 
+    const metrics = useMemo(() => {
+        const totalClients = clients.length;
         const activeCount = activeClientsList.length;
         const overdueCount = overdueClientsList.length;
         const dueTodayCount = dueTodayList.length;
@@ -831,7 +850,7 @@ const DashboardPage = ({ clients, rawClients }: { clients: Client[], rawClients:
             dueIn3DaysCount,
             dueIn3DaysRevenue
         };
-    }, [clients]);
+    }, [clients, activeClientsList, overdueClientsList, dueTodayList, dueIn3DaysList]);
 
     const handleIntervalChange = (value: 'today' | 'month' | 'year' | 'custom') => {
         const now = new Date();
@@ -888,7 +907,12 @@ const DashboardPage = ({ clients, rawClients }: { clients: Client[], rawClients:
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
                         <AlertTriangle className="h-4 w-4" /> Vencidos
                     </CardTitle>
-                    <div className="text-sm font-semibold">{metrics.overduePercentage.toFixed(1)}%</div>
+                    <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-500/10" onClick={() => setClientListModal({ title: 'Clientes Vencidos', clients: overdueClientsList })}>
+                            <Eye className="h-4 w-4" />
+                        </Button>
+                        <div className="text-sm font-semibold">{metrics.overduePercentage.toFixed(1)}%</div>
+                    </div>
                 </CardHeader>
                 <CardContent className="flex-1 flex items-center justify-between p-4">
                     <div className="text-2xl font-bold">{metrics.overdueCount}</div>
@@ -903,6 +927,9 @@ const DashboardPage = ({ clients, rawClients }: { clients: Client[], rawClients:
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
                         <CalendarIcon className="h-4 w-4" /> Vencem Hoje
                     </CardTitle>
+                     <Button variant="ghost" size="icon" className="h-6 w-6 text-yellow-600 hover:bg-yellow-500/10" onClick={() => setClientListModal({ title: 'Clientes que Vencem Hoje', clients: dueTodayList })}>
+                        <Eye className="h-4 w-4" />
+                    </Button>
                 </CardHeader>
                 <CardContent className="flex-1 flex items-center justify-between p-4">
                     <div className="text-2xl font-bold">{metrics.dueTodayCount}</div>
@@ -917,6 +944,9 @@ const DashboardPage = ({ clients, rawClients }: { clients: Client[], rawClients:
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
                         <Clock className="h-4 w-4" /> Vencem em 3 Dias
                     </CardTitle>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-blue-600 hover:bg-blue-500/10" onClick={() => setClientListModal({ title: 'Clientes que Vencem em 3 Dias', clients: dueIn3DaysList })}>
+                        <Eye className="h-4 w-4" />
+                    </Button>
                 </CardHeader>
                 <CardContent className="flex-1 flex items-center justify-between p-4">
                     <div className="text-2xl font-bold">{metrics.dueIn3DaysCount}</div>
@@ -996,9 +1026,61 @@ const DashboardPage = ({ clients, rawClients }: { clients: Client[], rawClients:
                 </div>
             </CardContent>
         </Card>
+        {clientListModal && (
+            <ClientListDialog 
+                isOpen={!!clientListModal}
+                onOpenChange={() => setClientListModal(null)}
+                title={clientListModal.title}
+                clients={clientListModal.clients}
+            />
+        )}
       </div>
     );
   };
+
+const ClientListDialog = ({ isOpen, onOpenChange, title, clients }: { isOpen: boolean, onOpenChange: () => void, title: string, clients: Client[] }) => {
+    return (
+        <Dialog open={isOpen} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>{title}</DialogTitle>
+                    <DialogDescription>
+                        Lista de clientes correspondentes a esta categoria.
+                    </DialogDescription>
+                </DialogHeader>
+                <ScrollArea className="max-h-80 mt-4">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Cliente</TableHead>
+                                <TableHead>Vencimento</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {clients.length > 0 ? (
+                                clients.map(client => (
+                                    <TableRow key={client.id}>
+                                        <TableCell className="font-medium">{client.name}</TableCell>
+                                        <TableCell>{client.dueDate ? format(new Date(client.dueDate as Date), 'dd/MM/yyyy') : 'N/A'}</TableCell>
+                                    </TableRow>
+                                ))
+                            ) : (
+                                <TableRow>
+                                    <TableCell colSpan={2} className="h-24 text-center">
+                                        Nenhum cliente nesta categoria.
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
+                </ScrollArea>
+                <DialogFooter>
+                    <Button onClick={onOpenChange}>Fechar</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+};
 
 type SortableClientKeys = 'name' | 'status' | 'dueDate' | 'subscription' | 'emails';
 
@@ -1912,7 +1994,7 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
 };
 
 
-const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscription[], allClients: Client[] }) => {
+const SettingsPage = ({ subscriptions, allClients, connection }: { subscriptions: Subscription[], allClients: Client[], connection: UserConnection | undefined }) => {
     const [newSubscriptionName, setNewSubscriptionName] = useState('');
     const [newSubscriptionPrice, setNewSubscriptionPrice] = useState('');
     const [editingSubscription, setEditingSubscription] = useState<Subscription | null>(null);
@@ -1925,6 +2007,35 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
     const [isPending, startTransition] = useTransition();
     const [confirmationText, setConfirmationText] = useState('');
     const subsFileInputRef = useRef<HTMLInputElement>(null);
+    const [token, setToken] = useState(connection?.token || '');
+
+
+    useEffect(() => {
+        setToken(connection?.token || '');
+    }, [connection]);
+
+    const handleSaveToken = () => {
+        if (!firestore || !userId) {
+            toast({ variant: 'destructive', title: 'Erro', description: 'Usuário ou banco de dados não disponível.' });
+            return;
+        }
+
+        const dataToSave = { token };
+
+        if (connection?.id) {
+            const connDoc = doc(firestore, 'users', userId, 'user_connection', connection.id);
+            updateDoc(connDoc, dataToSave);
+        } else {
+            const connCol = collection(firestore, 'users', userId, 'user_connection');
+            addDoc(connCol, dataToSave);
+        }
+
+        toast({
+            title: 'Sucesso!',
+            description: 'Token de conexão salvo.',
+        });
+    };
+
 
     const handleAddSubscription = () => {
       if (newSubscriptionName.trim() && newSubscriptionPrice && firestore && userId) {
@@ -2090,6 +2201,27 @@ const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscripti
                 <h2 className="text-2xl font-bold">Planos e Assinaturas</h2>
                 <p className="text-muted-foreground">Gerencie seus planos e outras configurações.</p>
             </div>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Token de Conexão</CardTitle>
+                    <CardDescription>
+                        Esta mensagem (token) será enviada em todas as requisições de webhook.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                        <Input
+                            placeholder="Insira seu token aqui..."
+                            value={token}
+                            onChange={(e) => setToken(e.target.value)}
+                        />
+                        <Button onClick={handleSaveToken} className="w-full sm:w-auto">
+                            <Save className="mr-2 h-4 w-4" /> Salvar Token
+                        </Button>
+                    </div>
+                </CardContent>
+            </Card>
 
             <Card>
                 <CardHeader>
