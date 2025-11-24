@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogIn, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -769,7 +769,7 @@ const AppDashboard = () => {
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={logout}>
-                        <LogIn className="mr-2 h-4 w-4" />
+                        <LogOut className="mr-2 h-4 w-4" />
                         <span>Sair</span>
                     </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -4773,7 +4773,7 @@ const LoginWithSaved = ({ onLogin, savedAccounts, onDelete }: { onLogin: (email:
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="w-full">
-                    <LogIn className="mr-2 h-4 w-4" /> Ver Contas Salvas
+                    <LogOut className="mr-2 h-4 w-4" /> Ver Contas Salvas
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-80">
