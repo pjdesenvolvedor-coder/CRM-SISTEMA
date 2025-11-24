@@ -21,19 +21,14 @@ async function postRequest(url: string, body: any = {}) {
       body: JSON.stringify(body),
     });
 
-    if (response.status === 429) {
-      console.error("Error 429: Too Many Requests.", { url });
-      throw new Error("Muitas tentativas. Por favor, aguarde um minuto e tente novamente.");
-    }
-
-    if (response.status === 200 && !response.headers.get('content-length')) {
-      return { status: 'ok' };
-    }
-
     const jsonResponse = await response.json();
     console.log(`Response from ${url}:`, jsonResponse);
 
-
+    if (jsonResponse.status === 429 || response.status === 429) {
+      console.error("Error 429: Too Many Requests.", { url, responseStatus: response.status, jsonResponse });
+      throw new Error("Muitas tentativas. Por favor, aguarde um minuto e tente novamente.");
+    }
+    
     if (!response.ok) {
         console.error(`Request to ${url} failed with status ${response.status}`, jsonResponse);
         throw new Error(jsonResponse.message || `Request failed with status ${response.status}`);
