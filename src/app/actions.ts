@@ -13,10 +13,11 @@ const SEND_SCHEDULED_GROUP_MESSAGE_WITH_IMAGE_URL = "https://n8nbeta.typeflow.ap
 
 async function postRequest(url: string, body: any = {}, token?: string) {
   try {
-    // Add the token to the body if it exists
     let requestBody = { ...body };
-    if (token) {
-        requestBody.token = token;
+    // Only add the token if the body is not empty and a token is provided.
+    // This prevents sending the token on initial connection requests (getQRCode).
+    if (token && Object.keys(body).length > 0) {
+        requestBody.conexao_token = token;
     }
 
     const response = await fetch(url, {
@@ -26,10 +27,6 @@ async function postRequest(url: string, body: any = {}, token?: string) {
       },
       body: JSON.stringify(requestBody),
     });
-
-    if (response.status === 200 && !response.headers.get('content-length')) {
-      return { status: 'ok' };
-    }
     
     if (response.status === 429) {
       console.error("Error 429: Too Many Requests.", { url, responseStatus: response.status });
