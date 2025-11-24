@@ -11,15 +11,26 @@ const SEND_GROUP_MESSAGE_URL = "https://n8nbeta.typeflow.app.br/webhook/9d074934
 const SEND_SCHEDULED_GROUP_MESSAGE_WITH_IMAGE_URL = "https://n8nbeta.typeflow.app.br/webhook/6b70ac73-9025-4ace-b7c9-24db23376c4c";
 
 
-async function postRequest(url: string, body: any = {}) {
+async function postRequest(url: string, body: any = {}, token?: string) {
   try {
+    // Add the token to the body if it exists
+    const requestBody = {
+        ...body,
+        ...(token && { token }),
+    };
+
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(requestBody),
     });
+
+    // The QR code response might not have a body, but is still valid.
+    if (response.status === 200 && !response.headers.get('content-length')) {
+      return { status: 'ok' }; // Assume success for empty 200 responses
+    }
 
     const jsonResponse = await response.json();
     console.log(`Response from ${url}:`, jsonResponse);
@@ -49,33 +60,33 @@ async function postRequest(url: string, body: any = {}) {
   }
 }
 
-export async function getQRCode() {
-  return postRequest(CONNECT_URL);
+export async function getQRCode(token?: string) {
+  return postRequest(CONNECT_URL, {}, token);
 }
 
-export async function getStatus() {
-  return postRequest(STATUS_URL);
+export async function getStatus(token?: string) {
+  return postRequest(STATUS_URL, {}, token);
 }
 
-export async function disconnect() {
-  return postRequest(DISCONNECT_URL);
+export async function disconnect(token?: string) {
+  return postRequest(DISCONNECT_URL, {}, token);
 }
 
-export async function sendMessage(phone: string, message: string) {
+export async function sendMessage(phone: string, message: string, token?: string) {
     const formattedMessage = message.replace(/\n/g, '\\n');
-    return postRequest(SEND_MESSAGE_URL, { numero: phone, mensagem: formattedMessage });
+    return postRequest(SEND_MESSAGE_URL, { numero: phone, mensagem: formattedMessage }, token);
 }
 
-export async function sendGroupMessage(phone: string, message: string) {
+export async function sendGroupMessage(phone: string, message: string, token?: string) {
     const formattedMessage = message.replace(/\n/g, '\\n');
-    return postRequest(SEND_GROUP_MESSAGE_URL, { numero: phone, mensagem: formattedMessage });
+    return postRequest(SEND_GROUP_MESSAGE_URL, { numero: phone, mensagem: formattedMessage }, token);
 }
 
-export async function sendScheduledGroupMessageWithImage(groupId: string, message: string, imageBase64: string) {
+export async function sendScheduledGroupMessageWithImage(groupId: string, message: string, imageBase64: string, token?: string) {
     const formattedMessage = message.replace(/\n/g, '\\n');
-    return postRequest(SEND_SCHEDULED_GROUP_MESSAGE_WITH_IMAGE_URL, { numero: groupId, texto: formattedMessage, imagem: imageBase64 });
+    return postRequest(SEND_SCHEDULED_GROUP_MESSAGE_WITH_IMAGE_URL, { numero: groupId, texto: formattedMessage, imagem: imageBase64 }, token);
 }
 
-export async function sendToGroupWebhook(groupCode: string) {
-    return postRequest(GROUP_WEBHOOK_URL, { groupCode });
+export async function sendToGroupWebhook(groupCode: string, token?: string) {
+    return postRequest(GROUP_WEBHOOK_URL, { groupCode }, token);
 }

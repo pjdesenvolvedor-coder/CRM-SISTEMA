@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save, LogIn } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -200,6 +200,10 @@ const AppDashboard = () => {
     const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(settingsPaths.some(p => pathname.startsWith(p)));
     const [isNotesMenuOpen, setIsNotesMenuOpen] = useState(notesPaths.some(p => pathname.startsWith(p)));
 
+    const userConnectionQuery = useMemoFirebase(() => (firestore && userId) ? collection(firestore, 'users', userId, 'user_connection') : null, [firestore, userId]);
+    const { data: userConnection, isLoading: userConnectionLoading } = useCollection<UserConnection>(userConnectionQuery);
+    const userToken = useMemo(() => userConnection?.[0], [userConnection]);
+
     useEffect(() => {
         const isCurrentPathInMessaging = messagingPaths.some(p => pathname.startsWith(p));
         if (!isCurrentPathInMessaging) {
@@ -259,7 +263,7 @@ const AppDashboard = () => {
     
         const fetchStatus = async () => {    
           try {
-            const result = await getStatus();
+            const result = await getStatus(userToken?.token);
             if (isCancelled) return;
             if (result.error) throw new Error(result.error);
             
@@ -301,7 +305,7 @@ const AppDashboard = () => {
           clearInterval(intervalId);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, []); // Run only once on mount
+      }, [userToken]); 
 
     const subscriptionsQuery = useMemoFirebase(() => (firestore && userId) ? collection(firestore, 'users', userId, 'subscriptions') : null, [firestore, userId]);
     const { data: subscriptions, isLoading: subscriptionsLoading } = useCollection<Subscription>(subscriptionsQuery);
@@ -321,10 +325,6 @@ const AppDashboard = () => {
     
     const adCampaignsQuery = useMemoFirebase(() => (firestore && userId) ? query(collection(firestore, 'users', userId, 'adCampaigns'), orderBy('date', 'desc')) : null, [firestore, userId]);
     const { data: adCampaigns, isLoading: adCampaignsLoading } = useCollection<AdCampaign>(adCampaignsQuery);
-
-    const userConnectionQuery = useMemoFirebase(() => (firestore && userId) ? collection(firestore, 'users', userId, 'user_connection') : null, [firestore, userId]);
-    const { data: userConnection, isLoading: userConnectionLoading } = useCollection<UserConnection>(userConnectionQuery);
-    const userToken = useMemo(() => userConnection?.[0], [userConnection]);
 
     const [supportClient, setSupportClient] = useState<Client | null>(null);
 
@@ -360,7 +360,7 @@ const AppDashboard = () => {
     
         const formattedMessage = formatMessage(message, client);
     
-        sendMessage(client.phone, formattedMessage)
+        sendMessage(client.phone, formattedMessage, userToken?.token)
             .then(result => {
                 if (result.error) {
                     throw new Error(result.error);
@@ -409,7 +409,7 @@ const AppDashboard = () => {
                     description: `Não foi possível enviar a mensagem para ${client.name}: ${error.message}`,
                 });
             });
-    }, [firestore, userId, toast, formatMessage]);
+    }, [firestore, userId, toast, formatMessage, userToken]);
 
 
     useEffect(() => {
@@ -501,8 +501,8 @@ const AppDashboard = () => {
                 const sendAt = msg.sendAt.toDate();
                 if (isPast(sendAt)) {
                     const sendPromise = msg.imageBase64 
-                        ? sendScheduledGroupMessageWithImage(msg.groupId, msg.message, msg.imageBase64)
-                        : sendGroupMessage(msg.groupId, msg.message);
+                        ? sendScheduledGroupMessageWithImage(msg.groupId, msg.message, msg.imageBase64, userToken?.token)
+                        : sendGroupMessage(msg.groupId, msg.message, userToken?.token);
     
                     sendPromise.then(result => {
                         if (result.error) {
@@ -541,7 +541,7 @@ const AppDashboard = () => {
         }, 10000); // Check every 10 seconds
     
         return () => clearInterval(checkInterval);
-    }, [scheduledMessages, firestore, toast, userId]);
+    }, [scheduledMessages, firestore, toast, userId, userToken]);
 
 
     const renderPage = () => {
@@ -549,9 +549,9 @@ const AppDashboard = () => {
             case '/':
                 return <DashboardPage clients={transformedClients} rawClients={clients ?? []} />;
             case '/clientes':
-                return <ClientsPage clients={transformedClients} rawClients={clients ?? []} subscriptions={subscriptions ?? []} onToggleSupport={handleToggleSupport} />;
+                return <ClientsPage clients={transformedClients} rawClients={clients ?? []} subscriptions={subscriptions ?? []} onToggleSupport={handleToggleSupport} userToken={userToken} />;
             case '/clientes/suporte':
-                return <SupportPage clients={transformedClients} onToggleSupport={handleToggleSupport} setSupportClient={setSupportClient} />;
+                return <SupportPage clients={transformedClients} onToggleSupport={handleToggleSupport} setSupportClient={setSupportClient} userToken={userToken} />;
             case '/notas':
                 return <NotesPage notes={notes ?? []} />;
             case '/notas/anuncios':
@@ -561,7 +561,7 @@ const AppDashboard = () => {
             case '/automacao/remarketing':
                 return <RemarketingPage config={automationSettings} />;
             case '/automacao/grupos':
-                return <GroupsPage scheduledMessages={scheduledMessages ?? []} />;
+                return <GroupsPage scheduledMessages={scheduledMessages ?? []} userToken={userToken} />;
             case '/configuracoes':
                 return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} connection={userToken} />;
             case '/email-temp':
@@ -719,6 +719,7 @@ const AppDashboard = () => {
                                     setZapProfile({ name: newProfile.name, pic: newProfile.pic });
                                 }
                             }}
+                            userToken={userToken}
                         />
                     </DialogContent>
                 </Dialog>
@@ -1084,7 +1085,7 @@ const ClientListDialog = ({ isOpen, onOpenChange, title, clients }: { isOpen: bo
 
 type SortableClientKeys = 'name' | 'status' | 'dueDate' | 'subscription' | 'emails';
 
-const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport }: { clients: Client[], rawClients: Client[], subscriptions: Subscription[], onToggleSupport: (client: Client) => void }) => {
+const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport, userToken }: { clients: Client[], rawClients: Client[], subscriptions: Subscription[], onToggleSupport: (client: Client) => void, userToken: UserConnection | undefined }) => {
     const [editingClient, setEditingClient] = useState<Client | null>(null);
     const [isAddClientDialogOpen, setIsAddClientDialogOpen] = useState(false);
     const [sortConfig, setSortConfig] = useState<{ key: SortableClientKeys; direction: 'ascending' | 'descending' } | null>({ key: 'name', direction: 'ascending' });
@@ -1474,7 +1475,7 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport }: { 
                                                         <span>Visualizar Detalhes</span>
                                                     </DropdownMenuItem>
                                                 }/>
-                                                <SendMessageDialog client={client} trigger={
+                                                <SendMessageDialog client={client} userToken={userToken} trigger={
                                                     <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
                                                         <MessageSquare className="mr-2 h-4 w-4" />
                                                         <span>Enviar Mensagem</span>
@@ -2982,7 +2983,7 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
 };
   
 
-const SendMessageDialog = ({ client, trigger, useGroupWebhook }: { client?: Client; trigger: React.ReactNode; useGroupWebhook?: boolean; }) => {
+const SendMessageDialog = ({ client, trigger, useGroupWebhook, userToken }: { client?: Client; trigger: React.ReactNode; useGroupWebhook?: boolean; userToken?: UserConnection; }) => {
     const [isMessageDialogOpen, setIsMessageDialogOpen] = useState(false);
     const [message, setMessage] = useState('');
     const [groupJid, setGroupJid] = useState('');
@@ -3006,7 +3007,7 @@ const SendMessageDialog = ({ client, trigger, useGroupWebhook }: { client?: Clie
       startTransition(async () => {
         try {
           const sendMessageFn = useGroupWebhook ? sendGroupMessage : sendMessage;
-          const result = await sendMessageFn(phone, message);
+          const result = await sendMessageFn(phone, message, userToken?.token);
 
           if (result.error) {
             throw new Error(result.error);
@@ -3143,7 +3144,7 @@ const SendMessageDialog = ({ client, trigger, useGroupWebhook }: { client?: Clie
     );
 };
 
-const SupportPage = ({ clients, onToggleSupport, setSupportClient }: { clients: Client[], onToggleSupport: (client: Client) => void, setSupportClient: (client: Client | null) => void }) => {
+const SupportPage = ({ clients, onToggleSupport, setSupportClient, userToken }: { clients: Client[], onToggleSupport: (client: Client) => void, setSupportClient: (client: Client | null) => void, userToken: UserConnection | undefined }) => {
     const supportClients = useMemo(() => {
         return clients.filter(c => c.isSupport);
     }, [clients]);
@@ -3197,7 +3198,7 @@ const SupportPage = ({ clients, onToggleSupport, setSupportClient }: { clients: 
                                     <CheckCircle className="mr-2 h-4 w-4" />
                                     Marcar como Concluído
                                 </Button>
-                                <SendMessageDialog client={client} trigger={
+                                <SendMessageDialog client={client} userToken={userToken} trigger={
                                     <Button className='w-full sm:w-auto'>
                                         <MessageSquare className="mr-2 h-4 w-4" />
                                         Enviar Mensagem
@@ -3640,7 +3641,7 @@ const NotesPage = ({ notes }: { notes: Note[] }) => {
     );
 }
 
-const GroupsPage = ({ scheduledMessages }: { scheduledMessages: ScheduledGroupMessage[] }) => {
+const GroupsPage = ({ scheduledMessages, userToken }: { scheduledMessages: ScheduledGroupMessage[], userToken: UserConnection | undefined }) => {
     return (
         <div className="w-full space-y-6">
             <div className='text-center sm:text-left'>
@@ -3654,7 +3655,7 @@ const GroupsPage = ({ scheduledMessages }: { scheduledMessages: ScheduledGroupMe
                 </TabsList>
                 
                 <TabsContent value="get-code">
-                    <GroupCodeGetter />
+                    <GroupCodeGetter userToken={userToken} />
                 </TabsContent>
 
                 <TabsContent value="send-messages">
@@ -3665,7 +3666,7 @@ const GroupsPage = ({ scheduledMessages }: { scheduledMessages: ScheduledGroupMe
     );
 };
 
-const GroupCodeGetter = () => {
+const GroupCodeGetter = ({ userToken }: { userToken: UserConnection | undefined }) => {
     const [groupCode, setGroupCode] = useState('');
     const [isPending, startTransition] = useTransition();
     const { toast } = useToast();
@@ -3683,7 +3684,7 @@ const GroupCodeGetter = () => {
         setGroupJid(null);
         startTransition(async () => {
             try {
-                const result = await sendToGroupWebhook(groupCode);
+                const result = await sendToGroupWebhook(groupCode, userToken?.token);
                 if (result.error) {
                     throw new Error(result.error);
                 }
@@ -4773,7 +4774,7 @@ const LoginWithSaved = ({ onLogin, savedAccounts, onDelete }: { onLogin: (email:
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="w-full">
-                    <LogOut className="mr-2 h-4 w-4" /> Ver Contas Salvas
+                    <LogIn className="mr-2 h-4 w-4" /> Ver Contas Salvas
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-80">

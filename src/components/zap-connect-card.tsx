@@ -24,6 +24,7 @@ import {
   Plug,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
+import type { UserConnection } from "./dashboard";
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "loading" | "error";
 
@@ -32,9 +33,10 @@ interface ZapConnectCardProps {
   profileName: string | null;
   profilePic: string | null;
   onStatusChange: (status: ConnectionStatus, profile?: { name: string | null; pic: string | null }) => void;
+  userToken: UserConnection | undefined;
 }
 
-export default function ZapConnectCard({ initialStatus, profileName, profilePic, onStatusChange }: ZapConnectCardProps) {
+export default function ZapConnectCard({ initialStatus, profileName, profilePic, onStatusChange, userToken }: ZapConnectCardProps) {
     const [status, setStatus] = useState<ConnectionStatus>(initialStatus);
     const [qrCode, setQrCode] = useState<string | null>(null);
     const [isPending, startTransition] = useTransition();
@@ -52,13 +54,13 @@ export default function ZapConnectCard({ initialStatus, profileName, profilePic,
             onStatusChange("connecting");
             setQrCode(null);
             try {
-                const result = await getQRCode();
+                const result = await getQRCode(userToken?.token);
                 if (result.error) throw new Error(result.error);
                 if (result.qrcode) {
                     setQrCode(result.qrcode);
                 } else {
                     // If QR code is not received, maybe it's already connecting or connected
-                    const statusResult = await getStatus();
+                    const statusResult = await getStatus(userToken?.token);
                     if(statusResult.status !== 'connected' && statusResult.status !== 'connecting') {
                         throw new Error("QR code not received from the server.");
                     }
@@ -80,7 +82,7 @@ export default function ZapConnectCard({ initialStatus, profileName, profilePic,
     const handleDisconnect = () => {
         startTransition(async () => {
             try {
-                await disconnect();
+                await disconnect(userToken?.token);
                 setStatus("disconnected");
                 onStatusChange("disconnected");
                 setQrCode(null);
