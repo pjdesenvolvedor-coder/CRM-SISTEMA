@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogIn, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -501,13 +501,15 @@ const AppDashboard = () => {
     
         const checkInterval = setInterval(() => {
             const pendingMessages = scheduledMessages.filter(m => m.status === 'pending');
-            
+    
             pendingMessages.forEach(msg => {
                 const sendAt = msg.sendAt.toDate();
                 if (isPast(sendAt)) {
-                    // Always use the webhook for sending with an image, just pass an empty string if no image exists.
-                    sendScheduledGroupMessageWithImage(msg.groupId, msg.message, msg.imageBase64 || '', userToken?.token)
-                    .then(result => {
+                    const sendPromise = msg.imageBase64
+                        ? sendScheduledGroupMessageWithImage(msg.groupId, msg.message, msg.imageBase64, userToken?.token)
+                        : sendGroupMessage(msg.groupId, msg.message, userToken?.token);
+    
+                    sendPromise.then(result => {
                         if (result.error) {
                             throw new Error(result.error);
                         }
@@ -515,7 +517,6 @@ const AppDashboard = () => {
                         const msgDoc = doc(firestore, 'users', userId, 'scheduledGroupMessages', msg.id);
     
                         if (msg.isRecurring) {
-                            // Re-schedule for the next day
                             const nextSendAt = addDays(sendAt, 1);
                             updateDoc(msgDoc, { sendAt: Timestamp.fromDate(nextSendAt), status: 'pending' });
                             toast({
@@ -523,15 +524,13 @@ const AppDashboard = () => {
                                 description: `Mensagem enviada para o grupo ${msg.groupId} e reagendada para amanhã.`,
                             });
                         } else {
-                            // Mark as sent
                             updateDoc(msgDoc, { status: 'sent' });
                             toast({
                                 title: 'Mensagem de Grupo Enviada',
                                 description: `Mensagem agendada enviada para o grupo ${msg.groupId}.`,
                             });
                         }
-                    })
-                    .catch(error => {
+                    }).catch(error => {
                         toast({
                             variant: "destructive",
                             title: 'Falha no Envio Agendado',
@@ -773,7 +772,7 @@ const AppDashboard = () => {
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={logout}>
-                        <LogIn className="mr-2 h-4 w-4" />
+                        <LogOut className="mr-2 h-4 w-4" />
                         <span>Sair</span>
                     </DropdownMenuItem>
                 </DropdownMenuContent>
