@@ -19,8 +19,6 @@ async function postRequest(url: string, body: any = {}) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
-      cache: 'no-store',
-      next: { revalidate: 1 }
     });
 
     if (response.status === 429) {
