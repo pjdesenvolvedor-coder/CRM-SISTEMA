@@ -2,7 +2,7 @@
 
 import { randomBytes } from 'node:crypto';
 
-const CONNECT_URL = "https://n8nbeta.typeflow.app.br/webhook/aeb30639-baf0-4862-9f5f-a3cc468ab7c5";
+const CONNECT_URL = "https://n8nbeta.typeflow.app.br/webhook-test/aeb30639-baf0-4862-9f5f-a3cc468ab7c5";
 const STATUS_URL = "https://n8nbeta.typeflow.app.br/webhook/ef3b141f-ebd0-433c-bdfc-2fb112558ffd";
 const DISCONNECT_URL = "https://n8nbeta.typeflow.app.br/webhook/2ac86d63-f7fc-4221-bbaf-efeecec33127";
 const SEND_MESSAGE_URL = "https://n8nbeta.typeflow.app.br/webhook/235c79d0-71ed-4a43-aa3c-5c0cf1de2580";
@@ -14,10 +14,10 @@ const SEND_SCHEDULED_GROUP_MESSAGE_WITH_IMAGE_URL = "https://n8nbeta.typeflow.ap
 async function postRequest(url: string, body: any = {}, token?: string) {
   try {
     let requestBody = { ...body };
-    // Only add the token if the body is not empty and a token is provided.
-    // This prevents sending the token on initial connection requests (getQRCode).
-    if (token && Object.keys(body).length > 0) {
-        requestBody.conexao_token = token;
+    
+    // Send token in ALL requests, without exception.
+    if (token) {
+        requestBody.chave = token;
     }
 
     const response = await fetch(url, {
