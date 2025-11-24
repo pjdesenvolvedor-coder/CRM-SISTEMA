@@ -48,7 +48,7 @@ import {
     TableRow,
   } from "@/components/ui/table"
 import { Textarea } from './ui/textarea';
-import { sendMessage, getStatus, sendToGroupWebhook, sendGroupMessage, sendScheduledGroupMessageWithImage } from '@/app/actions';
+import { sendMessage, getStatus, sendToGroupWebhook, sendScheduledGroupMessageWithImage } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Loader } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from './ui/card';
@@ -138,7 +138,7 @@ type ScheduledGroupMessage = {
     sendAt: Timestamp;
     status: 'pending' | 'sent';
     isRecurring: boolean;
-    imageBase64?: string;
+    imageBase64: string; // Now mandatory
 };
 
 type AdCampaign = {
@@ -505,11 +505,8 @@ const AppDashboard = () => {
             pendingMessages.forEach(msg => {
                 const sendAt = msg.sendAt.toDate();
                 if (isPast(sendAt)) {
-                    const sendPromise = msg.imageBase64
-                        ? sendScheduledGroupMessageWithImage(msg.groupId, msg.message, msg.imageBase64, userToken?.token)
-                        : sendGroupMessage(msg.groupId, msg.message, userToken?.token);
-    
-                    sendPromise.then(result => {
+                    sendScheduledGroupMessageWithImage(msg.groupId, msg.message, msg.imageBase64, userToken?.token)
+                    .then(result => {
                         if (result.error) {
                             throw new Error(result.error);
                         }
@@ -2993,8 +2990,8 @@ const SendMessageDialog = ({ client, trigger, useGroupWebhook, userToken }: { cl
     const { toast } = useToast();
   
     const handleSendMessage = () => {
-        const phone = useGroupWebhook ? groupJid : client?.phone;
-        const name = useGroupWebhook ? 'Grupo' : client?.name;
+        const phone = client?.phone;
+        const name = client?.name;
 
         if (!phone) {
             toast({ variant: 'destructive', title: 'Erro', description: 'Número do destinatário ou JID do grupo não encontrado.' });
@@ -3008,8 +3005,7 @@ const SendMessageDialog = ({ client, trigger, useGroupWebhook, userToken }: { cl
 
       startTransition(async () => {
         try {
-          const sendMessageFn = useGroupWebhook ? sendGroupMessage : sendMessage;
-          const result = await sendMessageFn(phone, message, userToken?.token);
+          const result = await sendMessage(phone, message, userToken?.token);
 
           if (result.error) {
             throw new Error(result.error);
@@ -3906,6 +3902,7 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [isConverting, setIsConverting] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [formErrors, setFormErrors] = useState<{ image?: boolean }>({});
     const { toast } = useToast();
 
     const clearImage = () => {
@@ -3914,10 +3911,12 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
         if(fileInputRef.current) {
             fileInputRef.current.value = '';
         }
+        setFormErrors(prev => ({ ...prev, image: false }));
     }
     
     useEffect(() => {
         if (isOpen) {
+            setFormErrors({});
             if (messageToEdit) {
                 setGroupId(messageToEdit.groupId);
                 setMessage(messageToEdit.message);
@@ -3952,6 +3951,12 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
             return;
         }
 
+        if (!imageBase64) {
+            setFormErrors({ image: true });
+            toast({ variant: 'destructive', title: 'Imagem Obrigatória', description: 'Por favor, selecione uma imagem para agendar a mensagem.' });
+            return;
+        }
+
         const finalDate = setSeconds(setMinutes(setHours(sendDate, parseInt(sendTime.hour)), parseInt(sendTime.minute)), 0);
 
         onSave({
@@ -3959,7 +3964,7 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
             message,
             sendAt: Timestamp.fromDate(finalDate),
             isRecurring,
-            imageBase64: imageBase64 || undefined,
+            imageBase64: imageBase64,
         });
     };
 
@@ -3975,6 +3980,7 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
                 return;
             }
             setImageFile(file);
+            setFormErrors(prev => ({ ...prev, image: false }));
             
             setIsConverting(true);
             const reader = new FileReader();
@@ -4016,7 +4022,7 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
                         <Textarea id="group-message" value={message} onChange={e => setMessage(e.target.value)} placeholder="Escreva sua mensagem..."/>
                     </div>
                      <div className="grid gap-2">
-                        <Label htmlFor="schedule-image">Imagem (Opcional)</Label>
+                        <Label htmlFor="schedule-image" className={cn(formErrors.image && "text-destructive")}>Imagem *</Label>
                         <Input
                             id="schedule-image"
                             type="file"
@@ -4026,7 +4032,7 @@ const ScheduleGroupMessageDialog = ({ isOpen, onOpenChange, onSave, messageToEdi
                             className="hidden"
                             disabled={isActionPending}
                         />
-                        <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isActionPending}>
+                        <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isActionPending} data-error={formErrors.image}>
                             <Upload className="mr-2 h-4 w-4" />
                             {(imageFile || imageBase64) ? 'Trocar Imagem' : 'Selecionar Imagem'}
                         </Button>
