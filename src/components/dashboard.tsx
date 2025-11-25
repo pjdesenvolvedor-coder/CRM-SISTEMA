@@ -921,7 +921,7 @@ const DashboardPage = ({ clients, rawClients }: { clients: Client[], rawClients:
             if (!c.dueDate) return false;
             const dueDate = startOfDay(new Date(c.dueDate as Date));
             const daysDiff = differenceInDays(dueDate, startOfDay(new Date()));
-            return daysDiff > 0 && daysDiff <= 3;
+            return daysDiff >= 0 && daysDiff <= 2;
         });
         return { activeClientsList: active, overdueClientsList: overdue, dueTodayList: today, dueIn3DaysList: in3Days };
     }, [clients]);
