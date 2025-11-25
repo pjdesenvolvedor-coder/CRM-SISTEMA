@@ -428,7 +428,7 @@ const AppDashboard = () => {
 
 
     useEffect(() => {
-        if (!automationSettings || !clients || !firestore) {
+        if (!automationSettings || !clients || !firestore || !userToken) {
             return;
         }
 
@@ -483,7 +483,7 @@ const AppDashboard = () => {
         }, 10000); // Check every 10 seconds
 
         return () => clearInterval(checkInterval);
-    }, [automationSettings, clients, firestore, transformedClients, sendAutomationMessage]);
+    }, [automationSettings, clients, firestore, transformedClients, sendAutomationMessage, userToken]);
 
     const handleToggleSupport = useMemo(() => (client: Client) => {
         if (!firestore || !userId) return;
@@ -914,16 +914,18 @@ const DashboardPage = ({ clients, rawClients }: { clients: Client[], rawClients:
         dueTodayList, 
         dueIn3DaysList 
     } = useMemo(() => {
+        const today = startOfDay(new Date());
         const active = clients.filter(c => c.status === 'ativo');
         const overdue = clients.filter(c => c.status === 'vencido' || c.status === 'cancelado');
-        const today = clients.filter(c => c.dueDate && isToday(new Date(c.dueDate as Date)));
-        const in3Days = clients.filter(c => {
+        const dueToday = clients.filter(c => c.dueDate && isToday(new Date(c.dueDate as Date)));
+        const dueIn3Days = clients.filter(c => {
             if (!c.dueDate) return false;
             const dueDate = startOfDay(new Date(c.dueDate as Date));
-            const daysDiff = differenceInDays(dueDate, startOfDay(new Date()));
-            return daysDiff >= 0 && daysDiff <= 2;
+            const daysDiff = differenceInDays(dueDate, today);
+            // Exactly in 1, 2 or 3 days. NOT today.
+            return daysDiff > 0 && daysDiff <= 3;
         });
-        return { activeClientsList: active, overdueClientsList: overdue, dueTodayList: today, dueIn3DaysList: in3Days };
+        return { activeClientsList: active, overdueClientsList: overdue, dueTodayList: dueToday, dueIn3DaysList: dueIn3Days };
     }, [clients]);
 
     const metrics = useMemo(() => {
@@ -1047,7 +1049,7 @@ const DashboardPage = ({ clients, rawClients }: { clients: Client[], rawClients:
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
                         <Clock className="h-4 w-4" /> Vencem em 3 Dias
                     </CardTitle>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-blue-600 hover:bg-blue-500/10" onClick={() => setClientListModal({ title: 'Clientes que Vencem em 3 Dias', clients: dueIn3DaysList })}>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-blue-600 hover:bg-blue-500/10" onClick={() => setClientListModal({ title: 'Clientes que Vencem nos Próximos 3 Dias', clients: dueIn3DaysList })}>
                         <Eye className="h-4 w-4" />
                     </Button>
                 </CardHeader>
@@ -4971,5 +4973,3 @@ const LoginWithSaved = ({ onLogin, savedAccounts, onDelete }: { onLogin: (email:
 
 
 export default AppDashboard;
-
-    
