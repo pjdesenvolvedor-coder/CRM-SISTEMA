@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save, LogIn } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -48,7 +48,7 @@ import {
     TableRow,
   } from "@/components/ui/table"
 import { Textarea } from './ui/textarea';
-import { sendMessage, getStatus, sendToGroupWebhook, sendScheduledGroupMessageWithImage } from '@/app/actions';
+import { sendMessage, getStatus, sendToGroupWebhook, sendScheduledGroupMessageWithImage, disconnect, getQRCode } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Loader } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from './ui/card';
@@ -149,10 +149,16 @@ type AdCampaign = {
     conversationsStarted: number;
 };
 
-type UserConnection = {
+export type UserConnection = {
     id: string;
     token: string;
 };
+
+type AllUserConnections = {
+    id: string;
+    token: string;
+    userId: string;
+}
 
 const getClientStatus = (dueDate: Date | Timestamp | null): ClientStatus => {
     if (!dueDate) {
@@ -203,6 +209,28 @@ const AppDashboard = () => {
     const userConnectionQuery = useMemoFirebase(() => (firestore && userId) ? collection(firestore, 'users', userId, 'user_connection') : null, [firestore, userId]);
     const { data: userConnection, isLoading: userConnectionLoading } = useCollection<UserConnection>(userConnectionQuery);
     const userToken = useMemo(() => userConnection?.[0], [userConnection]);
+
+    const allConnectionsQuery = useMemoFirebase(() => firestore ? collection(firestore, 'all_user_connections') : null, [firestore]);
+    const { data: allConnections, isLoading: allConnectionsLoading } = useCollection<AllUserConnections>(allConnectionsQuery);
+
+    const subscriptionsQuery = useMemoFirebase(() => (firestore && userId) ? collection(firestore, 'users', userId, 'subscriptions') : null, [firestore, userId]);
+    const { data: subscriptions, isLoading: subscriptionsLoading } = useCollection<Subscription>(subscriptionsQuery);
+
+    const clientsQuery = useMemoFirebase(() => (firestore && userId) ? collection(firestore, 'users', userId, 'clients') : null, [firestore, userId]);
+    const { data: clients, isLoading: clientsLoading } = useCollection<Client>(clientsQuery);
+    
+    const automationConfigQuery = useMemoFirebase(() => (firestore && userId) ? collection(firestore, 'users', userId, 'automation') : null, [firestore, userId]);
+    const { data: automationConfig, isLoading: automationLoading } = useCollection<AutomationConfig>(automationConfigQuery);
+    const automationSettings = useMemo(() => automationConfig?.[0], [automationConfig]);
+
+    const notesQuery = useMemoFirebase(() => (firestore && userId) ? query(collection(firestore, 'users', userId, 'notes'), orderBy('createdAt', 'desc')) : null, [firestore, userId]);
+    const { data: notes, isLoading: notesLoading } = useCollection<Note>(notesQuery);
+
+    const scheduledMessagesQuery = useMemoFirebase(() => (firestore && userId) ? query(collection(firestore, 'users', userId, 'scheduledGroupMessages'), orderBy('sendAt', 'desc')) : null, [firestore, userId]);
+    const { data: scheduledMessages, isLoading: scheduledMessagesLoading } = useCollection<ScheduledGroupMessage>(scheduledMessagesQuery);
+    
+    const adCampaignsQuery = useMemoFirebase(() => (firestore && userId) ? query(collection(firestore, 'users', userId, 'adCampaigns'), orderBy('date', 'desc')) : null, [firestore, userId]);
+    const { data: adCampaigns, isLoading: adCampaignsLoading } = useCollection<AdCampaign>(adCampaignsQuery);
 
     useEffect(() => {
         const isCurrentPathInMessaging = messagingPaths.some(p => pathname.startsWith(p));
@@ -312,25 +340,7 @@ const AppDashboard = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [userToken]); 
 
-    const subscriptionsQuery = useMemoFirebase(() => (firestore && userId) ? collection(firestore, 'users', userId, 'subscriptions') : null, [firestore, userId]);
-    const { data: subscriptions, isLoading: subscriptionsLoading } = useCollection<Subscription>(subscriptionsQuery);
-
-    const clientsQuery = useMemoFirebase(() => (firestore && userId) ? collection(firestore, 'users', userId, 'clients') : null, [firestore, userId]);
-    const { data: clients, isLoading: clientsLoading } = useCollection<Client>(clientsQuery);
     
-    const automationConfigQuery = useMemoFirebase(() => (firestore && userId) ? collection(firestore, 'users', userId, 'automation') : null, [firestore, userId]);
-    const { data: automationConfig, isLoading: automationLoading } = useCollection<AutomationConfig>(automationConfigQuery);
-    const automationSettings = useMemo(() => automationConfig?.[0], [automationConfig]);
-
-    const notesQuery = useMemoFirebase(() => (firestore && userId) ? query(collection(firestore, 'users', userId, 'notes'), orderBy('createdAt', 'desc')) : null, [firestore, userId]);
-    const { data: notes, isLoading: notesLoading } = useCollection<Note>(notesQuery);
-
-    const scheduledMessagesQuery = useMemoFirebase(() => (firestore && userId) ? query(collection(firestore, 'users', userId, 'scheduledGroupMessages'), orderBy('sendAt', 'desc')) : null, [firestore, userId]);
-    const { data: scheduledMessages, isLoading: scheduledMessagesLoading } = useCollection<ScheduledGroupMessage>(scheduledMessagesQuery);
-    
-    const adCampaignsQuery = useMemoFirebase(() => (firestore && userId) ? query(collection(firestore, 'users', userId, 'adCampaigns'), orderBy('date', 'desc')) : null, [firestore, userId]);
-    const { data: adCampaigns, isLoading: adCampaignsLoading } = useCollection<AdCampaign>(adCampaignsQuery);
-
     const [supportClient, setSupportClient] = useState<Client | null>(null);
 
     const transformedClients = React.useMemo(() => {
@@ -423,16 +433,15 @@ const AppDashboard = () => {
         }
 
         const checkInterval = setInterval(() => {
-            const now = new Date();
-            
             transformedClients.forEach(client => {
                 const clientDueDate = client.dueDate ? new Date(client.dueDate as Date) : null;
                 const lastNotificationDate = client.lastNotificationSent instanceof Timestamp ? client.lastNotificationSent.toDate() : null;
-
+    
                 // --- Due Date Logic (New) ---
                 if (automationSettings.isEnabled && clientDueDate) {
-                    // Check if due date is today and if a notification for today hasn't been sent.
-                    if (isToday(clientDueDate) && (!lastNotificationDate || !isSameDay(lastNotificationDate, clientDueDate))) {
+                    // Check if it's past due AND a notification for this specific due date hasn't been sent.
+                    // This prevents sending a message every 10 seconds if the app is left open.
+                    if (isPast(clientDueDate) && (!lastNotificationDate || lastNotificationDate < clientDueDate)) {
                         sendAutomationMessage(client, automationSettings.message, 'due');
                     }
                 }
@@ -562,7 +571,7 @@ const AppDashboard = () => {
             case '/automacao/grupos':
                 return <GroupsPage scheduledMessages={scheduledMessages ?? []} userToken={userToken} />;
             case '/configuracoes':
-                return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} connection={userToken} />;
+                return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} connection={userToken} allConnections={allConnections ?? []}/>;
             case '/email-temp':
                 return <TempEmailPage />;
             default:
@@ -570,9 +579,11 @@ const AppDashboard = () => {
         }
     };
     
-    const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading || adCampaignsLoading || userConnectionLoading;
+    const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading || adCampaignsLoading || userConnectionLoading || allConnectionsLoading;
 
-    if (isLoading) {
+    const needsToken = !userConnectionLoading && !userToken;
+
+    if (isLoading && !needsToken) {
         return (
             <div className="flex h-screen w-full items-center justify-center">
                 <Loader className="h-12 w-12 animate-spin text-primary" />
@@ -777,6 +788,13 @@ const AppDashboard = () => {
         </SidebarFooter>
       </Sidebar>
       <SidebarInset className={cn("flex min-h-screen w-full flex-col bg-background", isTransitioningPage && "opacity-50 transition-opacity")}>
+        {needsToken && (
+            <ForceTokenSetupDialog 
+                allConnections={allConnections ?? []} 
+                userId={userId ?? ''} 
+                firestore={firestore} 
+            />
+        )}
         <header className="sticky top-0 z-10 flex h-14 items-center justify-between gap-4 border-b bg-background px-4 sm:px-6 md:hidden">
             <h1 className="text-xl font-semibold text-center">ZapConnect</h1>
             <SidebarTrigger />
@@ -795,6 +813,91 @@ const AppDashboard = () => {
       </SidebarInset>
     </div>
   );
+};
+
+const ForceTokenSetupDialog = ({ allConnections, userId, firestore }: { allConnections: AllUserConnections[], userId: string, firestore: any }) => {
+    const [token, setToken] = useState('');
+    const [isPending, startTransition] = useTransition();
+    const { toast } = useToast();
+    const [error, setError] = useState('');
+
+    const handleSaveToken = () => {
+        setError('');
+        if (!token.trim()) {
+            setError('O token não pode estar em branco.');
+            return;
+        }
+
+        const isTokenInUse = allConnections.some(conn => conn.token === token.trim());
+        if (isTokenInUse) {
+            setError('Essa chave já está em uso. Por favor, escolha outra.');
+            return;
+        }
+
+        startTransition(async () => {
+            if (!firestore || !userId) {
+                toast({ variant: 'destructive', title: 'Erro', description: 'Usuário ou banco de dados não disponível.' });
+                return;
+            }
+
+            try {
+                const batch = writeBatch(firestore);
+                
+                const userConnRef = doc(collection(firestore, 'users', userId, 'user_connection'));
+                batch.set(userConnRef, { token: token.trim() });
+
+                const allConnRef = doc(collection(firestore, 'all_user_connections'));
+                batch.set(allConnRef, { token: token.trim(), userId: userId });
+                
+                await batch.commit();
+
+                toast({
+                    title: 'Sucesso!',
+                    description: 'Sua chave de conexão foi definida.',
+                });
+                // The component will unmount automatically as the parent re-renders.
+            } catch (e) {
+                console.error("Error saving token:", e);
+                setError('Ocorreu um erro ao salvar a chave. Tente novamente.');
+            }
+        });
+    };
+
+    return (
+        <div className="fixed inset-0 z-[100] bg-background/80 backdrop-blur-sm">
+            <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+                <Card className="w-full max-w-md">
+                    <CardHeader>
+                        <CardTitle>Definir Chave de Conexão</CardTitle>
+                        <CardDescription>
+                            Para usar o sistema, você precisa definir uma chave de conexão única.
+                            Esta chave será usada para autenticar todas as suas solicitações de webhook.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="connection-token">Chave de Conexão</Label>
+                            <Input
+                                id="connection-token"
+                                placeholder="Crie uma chave segura..."
+                                value={token}
+                                onChange={(e) => setToken(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleSaveToken()}
+                                disabled={isPending}
+                            />
+                            {error && <p className="text-sm text-destructive">{error}</p>}
+                        </div>
+                    </CardContent>
+                    <CardFooter>
+                        <Button onClick={handleSaveToken} disabled={isPending} className="w-full">
+                            {isPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
+                            Salvar e Acessar o Sistema
+                        </Button>
+                    </CardFooter>
+                </Card>
+            </div>
+        </div>
+    );
 };
 
 const DashboardPage = ({ clients, rawClients }: { clients: Client[], rawClients: Client[] }) => {
@@ -1994,7 +2097,7 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
 };
 
 
-const SettingsPage = ({ subscriptions, allClients, connection }: { subscriptions: Subscription[], allClients: Client[], connection: UserConnection | undefined }) => {
+const SettingsPage = ({ subscriptions, allClients, connection, allConnections }: { subscriptions: Subscription[], allClients: Client[], connection: UserConnection | undefined, allConnections: AllUserConnections[] }) => {
     const [newSubscriptionName, setNewSubscriptionName] = useState('');
     const [newSubscriptionPrice, setNewSubscriptionPrice] = useState('');
     const [editingSubscription, setEditingSubscription] = useState<Subscription | null>(null);
@@ -2008,6 +2111,7 @@ const SettingsPage = ({ subscriptions, allClients, connection }: { subscriptions
     const [confirmationText, setConfirmationText] = useState('');
     const subsFileInputRef = useRef<HTMLInputElement>(null);
     const [token, setToken] = useState(connection?.token || '');
+    const [tokenError, setTokenError] = useState('');
 
 
     useEffect(() => {
@@ -2015,24 +2119,60 @@ const SettingsPage = ({ subscriptions, allClients, connection }: { subscriptions
     }, [connection]);
 
     const handleSaveToken = () => {
-        if (!firestore || !userId) {
-            toast({ variant: 'destructive', title: 'Erro', description: 'Usuário ou banco de dados não disponível.' });
+        setTokenError('');
+        if (!token.trim()) {
+            setTokenError('O token não pode estar em branco.');
             return;
         }
 
-        const dataToSave = { token };
-
-        if (connection?.id) {
-            const connDoc = doc(firestore, 'users', userId, 'user_connection', connection.id);
-            updateDoc(connDoc, dataToSave);
-        } else {
-            const connCol = collection(firestore, 'users', userId, 'user_connection');
-            addDoc(connCol, dataToSave);
+        const isTokenInUse = allConnections.some(conn => conn.token === token.trim() && conn.userId !== userId);
+        if (isTokenInUse) {
+            setTokenError('Essa chave já está em uso. Por favor, escolha outra.');
+            return;
         }
 
-        toast({
-            title: 'Sucesso!',
-            description: 'Token de conexão salvo.',
+
+        startTransition(async () => {
+            if (!firestore || !userId) {
+                toast({ variant: 'destructive', title: 'Erro', description: 'Usuário ou banco de dados não disponível.' });
+                return;
+            }
+    
+            const userConnQuery = query(collection(firestore, 'users', userId, 'user_connection'));
+            const allConnQuery = query(collection(firestore, 'all_user_connections'), where('userId', '==', userId));
+
+            try {
+                const [userConnSnapshot, allConnSnapshot] = await Promise.all([getDocs(userConnQuery), getDocs(allConnQuery)]);
+                const batch = writeBatch(firestore);
+                
+                // Update or create in user's subcollection
+                if (!userConnSnapshot.empty) {
+                    const docRef = userConnSnapshot.docs[0].ref;
+                    batch.update(docRef, { token: token.trim() });
+                } else {
+                    const docRef = doc(collection(firestore, 'users', userId, 'user_connection'));
+                    batch.set(docRef, { token: token.trim() });
+                }
+
+                // Update or create in global collection
+                if (!allConnSnapshot.empty) {
+                    const docRef = allConnSnapshot.docs[0].ref;
+                    batch.update(docRef, { token: token.trim() });
+                } else {
+                    const docRef = doc(collection(firestore, 'all_user_connections'));
+                    batch.set(docRef, { token: token.trim(), userId });
+                }
+                
+                await batch.commit();
+
+                toast({
+                    title: 'Sucesso!',
+                    description: 'Chave de conexão salva.',
+                });
+            } catch (e) {
+                console.error("Error saving token:", e);
+                setTokenError('Ocorreu um erro ao salvar a chave. Tente novamente.');
+            }
         });
     };
 
@@ -2204,20 +2344,24 @@ const SettingsPage = ({ subscriptions, allClients, connection }: { subscriptions
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Token de Conexão</CardTitle>
+                    <CardTitle>Chave de Conexão</CardTitle>
                     <CardDescription>
-                        Esta mensagem (token) será enviada em todas as requisições de webhook com o nome `chave`.
+                        Esta chave será enviada em todas as requisições de webhook para autenticação.
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="flex flex-col sm:flex-row gap-2">
-                        <Input
-                            placeholder="Insira seu token aqui..."
-                            value={token}
-                            onChange={(e) => setToken(e.target.value)}
-                        />
-                        <Button onClick={handleSaveToken} className="w-full sm:w-auto">
-                            <Save className="mr-2 h-4 w-4" /> Salvar Token
+                        <div className="flex-grow space-y-1">
+                            <Input
+                                placeholder="Insira sua chave de conexão aqui..."
+                                value={token}
+                                onChange={(e) => setToken(e.target.value)}
+                            />
+                            {tokenError && <p className="text-sm text-destructive">{tokenError}</p>}
+                        </div>
+                        <Button onClick={handleSaveToken} disabled={isPending} className="w-full sm:w-auto">
+                            {isPending ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} 
+                            Salvar Chave
                         </Button>
                     </div>
                 </CardContent>
@@ -4827,3 +4971,5 @@ const LoginWithSaved = ({ onLogin, savedAccounts, onDelete }: { onLogin: (email:
 
 
 export default AppDashboard;
+
+    

@@ -78,3 +78,5 @@ export async function sendScheduledGroupMessageWithImage(groupId: string, messag
 export async function sendToGroupWebhook(groupCode: string, token?: string) {
     return postRequest(GROUP_WEBHOOK_URL, { groupCode }, token);
 }
+
+    
