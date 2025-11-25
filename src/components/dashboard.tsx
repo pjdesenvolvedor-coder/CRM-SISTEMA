@@ -3406,7 +3406,7 @@ const NotesPage = ({ notes }: { notes: Note[] }) => {
             return;
         }
         if (noteContent.trim() === '') {
-            toast({ variant: 'destructive', title: 'Erro', description: 'A nota não pode estar vazia.' });
+            toast({ variant: 'destructive', title: 'Erro', description: 'A nota não pode estar em branco.' });
             return;
         }
 
