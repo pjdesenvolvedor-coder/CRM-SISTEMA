@@ -434,13 +434,11 @@ const AppDashboard = () => {
 
         const checkInterval = setInterval(() => {
             transformedClients.forEach(client => {
-                const clientDueDate = client.dueDate ? new Date(client.dueDate as Date) : null;
+                const clientDueDate = client.dueDate ? (client.dueDate instanceof Timestamp ? client.dueDate.toDate() : new Date(client.dueDate)) : null;
                 const lastNotificationDate = client.lastNotificationSent instanceof Timestamp ? client.lastNotificationSent.toDate() : null;
     
                 // --- Due Date Logic (New) ---
                 if (automationSettings.isEnabled && clientDueDate) {
-                    // Check if it's past due AND a notification for this specific due date hasn't been sent.
-                    // This prevents sending a message every 10 seconds if the app is left open.
                     if (isPast(clientDueDate) && (!lastNotificationDate || lastNotificationDate < clientDueDate)) {
                         sendAutomationMessage(client, automationSettings.message, 'due');
                     }
@@ -569,7 +567,7 @@ const AppDashboard = () => {
             case '/automacao/remarketing':
                 return <RemarketingPage config={automationSettings} />;
             case '/automacao/grupos':
-                return <GroupsPage scheduledMessages={scheduledMessages ?? []} userToken={userToken} />;
+                return <GroupsPage scheduledMessages={scheduledMessages ?? []} />;
             case '/configuracoes':
                 return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} connection={userToken} allConnections={allConnections ?? []}/>;
             case '/email-temp':
@@ -922,7 +920,6 @@ const DashboardPage = ({ clients, rawClients }: { clients: Client[], rawClients:
             if (!c.dueDate) return false;
             const dueDate = startOfDay(new Date(c.dueDate as Date));
             const daysDiff = differenceInDays(dueDate, today);
-            // Exactly in 1, 2 or 3 days. NOT today.
             return daysDiff > 0 && daysDiff <= 3;
         });
         return { activeClientsList: active, overdueClientsList: overdue, dueTodayList: dueToday, dueIn3DaysList: dueIn3Days };
@@ -3785,7 +3782,7 @@ const NotesPage = ({ notes }: { notes: Note[] }) => {
     );
 }
 
-const GroupsPage = ({ scheduledMessages, userToken }: { scheduledMessages: ScheduledGroupMessage[], userToken: UserConnection | undefined }) => {
+const GroupsPage = ({ scheduledMessages }: { scheduledMessages: ScheduledGroupMessage[] }) => {
     return (
         <div className="w-full space-y-6">
             <div className='text-center sm:text-left'>
@@ -3799,7 +3796,7 @@ const GroupsPage = ({ scheduledMessages, userToken }: { scheduledMessages: Sched
                 </TabsList>
                 
                 <TabsContent value="get-code">
-                    <GroupCodeGetter userToken={userToken} />
+                    <GroupCodeGetter />
                 </TabsContent>
 
                 <TabsContent value="send-messages">
@@ -3810,7 +3807,7 @@ const GroupsPage = ({ scheduledMessages, userToken }: { scheduledMessages: Sched
     );
 };
 
-const GroupCodeGetter = ({ userToken }: { userToken: UserConnection | undefined }) => {
+const GroupCodeGetter = () => {
     const [groupCode, setGroupCode] = useState('');
     const [isPending, startTransition] = useTransition();
     const { toast } = useToast();
@@ -3828,7 +3825,7 @@ const GroupCodeGetter = ({ userToken }: { userToken: UserConnection | undefined 
         setGroupJid(null);
         startTransition(async () => {
             try {
-                const result = await sendToGroupWebhook(groupCode, userToken?.token);
+                const result = await sendToGroupWebhook(groupCode);
                 if (result.error) {
                     throw new Error(result.error);
                 }
