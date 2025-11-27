@@ -507,7 +507,7 @@ const AppDashboard = () => {
         }
     
         const checkInterval = setInterval(() => {
-            const pendingMessages = scheduledMessages.filter(m => m.status === 'pending');
+            const pendingMessages = scheduledMessages.filter(msg => m.status === 'pending');
     
             pendingMessages.forEach(msg => {
                 const sendAt = msg.sendAt.toDate();
@@ -521,11 +521,15 @@ const AppDashboard = () => {
                         const msgDoc = doc(firestore, 'users', userId, 'scheduledGroupMessages', msg.id);
     
                         if (msg.isRecurring) {
-                            const nextSendAt = addDays(sendAt, 1);
+                            let nextSendAt = addDays(sendAt, 1);
+                            // If the calculated next send time is still in the past, set it for the next day from NOW.
+                            if (isPast(nextSendAt)) {
+                                nextSendAt = addDays(new Date(), 1);
+                            }
                             updateDoc(msgDoc, { sendAt: Timestamp.fromDate(nextSendAt), status: 'pending' });
                             toast({
                                 title: 'Mensagem Recorrente Enviada',
-                                description: `Mensagem enviada para o grupo ${msg.groupId} e reagendada para amanhã.`,
+                                description: `Mensagem enviada para o grupo ${msg.groupId} e reagendada.`,
                             });
                         } else {
                             updateDoc(msgDoc, { status: 'sent' });
@@ -579,7 +583,7 @@ const AppDashboard = () => {
     
     const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading || adCampaignsLoading || userConnectionLoading || allConnectionsLoading;
 
-    const needsToken = !userConnectionLoading && !userToken;
+    const needsToken = !isUserLoading && !userToken;
 
     if (isLoading && !needsToken) {
         return (
@@ -717,6 +721,10 @@ const AppDashboard = () => {
                         </SidebarMenuButton>
                     </DialogTrigger>
                     <DialogContent className="p-0 max-w-md bg-background/80 backdrop-blur-sm border-none">
+                        <DialogHeader className="sr-only">
+                            <DialogTitle>Conexão WhatsApp</DialogTitle>
+                            <DialogDescription>Gerencie sua conexão com o WhatsApp aqui.</DialogDescription>
+                        </DialogHeader>
                         <ZapConnectCard
                             initialStatus={connectionStatus}
                             profileName={zapProfile.name}
