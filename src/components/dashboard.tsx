@@ -160,6 +160,23 @@ type AllUserConnections = {
     userId: string;
 }
 
+// Types for mail.tm - Moved to AppDashboard state
+type TempMessage = {
+    id: string;
+    from: { address: string; name: string };
+    subject: string;
+    intro: string;
+    createdAt: string;
+    body?: string; // Will be fetched separately
+};
+
+type SavedTempAccount = {
+    email: string;
+    pass: string;
+    savedAt: string;
+};
+
+
 const getClientStatus = (dueDate: Date | Timestamp | null): ClientStatus => {
     if (!dueDate) {
       return 'ativo'; // No due date means always active
@@ -205,6 +222,27 @@ const AppDashboard = () => {
     const [isClientMenuOpen, setIsClientMenuOpen] = useState(clientPaths.some(p => pathname.startsWith(p)));
     const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(settingsPaths.some(p => pathname.startsWith(p)));
     const [isNotesMenuOpen, setIsNotesMenuOpen] = useState(notesPaths.some(p => pathname.startsWith(p)));
+    
+    // --- Temp Email State (Elevated) ---
+    const [tempEmailState, setTempEmailState] = useState<{
+        status: 'idle' | 'monitoring' | 'error';
+        email: string;
+        password: string;
+        token: string;
+        messages: TempMessage[];
+        seenMessageIds: Set<string>;
+        savedAccounts: SavedTempAccount[];
+    }>({
+        status: 'idle',
+        email: '',
+        password: '',
+        token: '',
+        messages: [],
+        seenMessageIds: new Set(),
+        savedAccounts: [],
+    });
+    // --- End Temp Email State ---
+
 
     const userConnectionQuery = useMemoFirebase(() => (firestore && userId) ? collection(firestore, 'users', userId, 'user_connection') : null, [firestore, userId]);
     const { data: userConnection, isLoading: userConnectionLoading } = useCollection<UserConnection>(userConnectionQuery);
@@ -507,7 +545,7 @@ const AppDashboard = () => {
         }
     
         const checkInterval = setInterval(() => {
-            const pendingMessages = scheduledMessages.filter(msg => m.status === 'pending');
+            const pendingMessages = scheduledMessages.filter(msg => msg.status === 'pending');
     
             pendingMessages.forEach(msg => {
                 const sendAt = msg.sendAt.toDate();
@@ -575,7 +613,7 @@ const AppDashboard = () => {
             case '/configuracoes':
                 return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} connection={userToken} allConnections={allConnections ?? []}/>;
             case '/email-temp':
-                return <TempEmailPage />;
+                return <TempEmailPage tempEmailState={tempEmailState} setTempEmailState={setTempEmailState} />;
             default:
                 return <DashboardPage clients={transformedClients} rawClients={clients ?? []} />;
         }
@@ -4594,38 +4632,14 @@ const AddEditAdCampaignDialog = ({ isOpen, onOpenChange, onSave, campaignToEdit 
     );
 };
 
-// Types for mail.tm
-type TempMessage = {
-    id: string;
-    from: { address: string; name: string };
-    subject: string;
-    intro: string;
-    createdAt: string;
-    body?: string; // Will be fetched separately
-};
-
-type SavedTempAccount = {
-    email: string;
-    pass: string;
-    savedAt: string;
-};
-
-const TempEmailPage = () => {
+const TempEmailPage = ({ tempEmailState, setTempEmailState }: { 
+    tempEmailState: any, 
+    setTempEmailState: React.Dispatch<React.SetStateAction<any>> 
+}) => {
     const { toast } = useToast();
     const [isPending, setIsPending] = useState(false);
-    const [status, setStatus] = useState<'idle' | 'monitoring' | 'error'>('idle');
-    
-    // Credentials
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [token, setToken] = useState('');
 
-    // Inbox
-    const [messages, setMessages] = useState<TempMessage[]>([]);
-    const [seenMessageIds, setSeenMessageIds] = useState<Set<string>>(new Set());
-
-    // Saved accounts
-    const [savedAccounts, setSavedAccounts] = useState<SavedTempAccount[]>([]);
+    const { status, email, password, token, messages, seenMessageIds, savedAccounts } = tempEmailState;
 
     const MOCK_API_URL = "https://api.mail.tm";
 
@@ -4634,12 +4648,12 @@ const TempEmailPage = () => {
         try {
             const stored = localStorage.getItem('temp_accounts');
             if (stored) {
-                setSavedAccounts(JSON.parse(stored));
+                setTempEmailState((prev: any) => ({ ...prev, savedAccounts: JSON.parse(stored) }));
             }
         } catch (e) {
             console.error("Failed to load saved accounts from localStorage", e);
         }
-    }, []);
+    }, [setTempEmailState]);
 
     // API calls now happen on the client
     const apiRequest = async (url: string, options: RequestInit = {}) => {
@@ -4657,6 +4671,18 @@ const TempEmailPage = () => {
         return response.json();
     };
     
+    const logout = () => {
+        setTempEmailState({
+            status: 'idle',
+            email: '',
+            password: '',
+            token: '',
+            messages: [],
+            seenMessageIds: new Set(),
+            savedAccounts: savedAccounts // Keep saved accounts on logout
+        });
+    };
+
     const generateAndLogin = async () => {
         setIsPending(true);
         logout(); // Clear previous session
@@ -4686,16 +4712,19 @@ const TempEmailPage = () => {
                 body: JSON.stringify({ address: newEmail, password: newPassword }),
             });
 
-            setEmail(newEmail);
-            setPassword(newPassword);
-            setToken(tokenData.token);
-            setStatus('monitoring');
+            setTempEmailState(prev => ({
+                ...prev,
+                email: newEmail,
+                password: newPassword,
+                token: tokenData.token,
+                status: 'monitoring'
+            }));
             toast({ title: "Sucesso!", description: "E-mail temporário gerado e monitorando." });
 
         } catch (error) {
             console.error(error);
             toast({ variant: 'destructive', title: 'Erro ao Gerar E-mail', description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido." });
-            setStatus('error');
+            setTempEmailState(prev => ({ ...prev, status: 'error' }));
         } finally {
             setIsPending(false);
         }
@@ -4711,27 +4740,21 @@ const TempEmailPage = () => {
                 body: JSON.stringify({ address: emailToLogin, password: passToLogin }),
             });
             
-            setEmail(emailToLogin);
-            setPassword(passToLogin);
-            setToken(tokenData.token);
-            setStatus('monitoring');
+            setTempEmailState(prev => ({
+                ...prev,
+                email: emailToLogin,
+                password: passToLogin,
+                token: tokenData.token,
+                status: 'monitoring'
+            }));
             toast({ title: "Login Efetuado!", description: "Monitorando caixa de entrada." });
         } catch (error) {
             console.error(error);
             toast({ variant: 'destructive', title: 'Falha no Login', description: error instanceof Error ? error.message : "Credenciais inválidas ou erro na API." });
-            setStatus('error');
+            setTempEmailState(prev => ({ ...prev, status: 'error' }));
         } finally {
             setIsPending(false);
         }
-    };
-
-    const logout = () => {
-        setEmail('');
-        setPassword('');
-        setToken('');
-        setMessages([]);
-        setSeenMessageIds(new Set());
-        setStatus('idle');
     };
 
     const saveCurrentCredentials = () => {
@@ -4739,7 +4762,8 @@ const TempEmailPage = () => {
         const newAccount: SavedTempAccount = { email, pass: password, savedAt: new Date().toISOString() };
         
         const newSavedAccounts = [newAccount, ...savedAccounts.filter(acc => acc.email !== email)];
-        setSavedAccounts(newSavedAccounts);
+        
+        setTempEmailState(prev => ({ ...prev, savedAccounts: newSavedAccounts }));
 
         try {
             localStorage.setItem('temp_accounts', JSON.stringify(newSavedAccounts));
@@ -4752,7 +4776,7 @@ const TempEmailPage = () => {
 
     const deleteSavedAccount = (emailToDelete: string) => {
         const newSavedAccounts = savedAccounts.filter(acc => acc.email !== emailToDelete);
-        setSavedAccounts(newSavedAccounts);
+        setTempEmailState(prev => ({ ...prev, savedAccounts: newSavedAccounts }));
         try {
             localStorage.setItem('temp_accounts', JSON.stringify(newSavedAccounts));
             toast({ title: 'Conta Removida', description: 'A conta foi removida da sua lista.' });
@@ -4789,21 +4813,24 @@ const TempEmailPage = () => {
                         }
                     }));
 
-                    setMessages(prev => [...messagesWithBody, ...prev]);
-                    setSeenMessageIds(prev => new Set([...prev, ...newMessages.map(m => m.id)]));
+                    setTempEmailState(prev => ({
+                        ...prev,
+                        messages: [...messagesWithBody, ...prev.messages],
+                        seenMessageIds: new Set([...prev.seenMessageIds, ...newMessages.map(m => m.id)])
+                    }));
                 }
             } catch (error) {
                 console.error("Error fetching messages:", error);
                 // Optional: Stop monitoring on error or just log it
-                // setStatus('error');
+                // setTempEmailState(prev => ({ ...prev, status: 'error' }));
             }
         };
 
-        const intervalId = setInterval(fetchMessages, 10000); // Poll every 10s
+        const intervalId = setInterval(fetchMessages, 1000); // Poll every 1s
         fetchMessages(); // Initial fetch
 
         return () => clearInterval(intervalId);
-    }, [status, token, seenMessageIds]);
+    }, [status, token, seenMessageIds, setTempEmailState]);
 
     return (
         <div className="w-full space-y-6">
