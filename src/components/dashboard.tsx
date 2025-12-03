@@ -91,6 +91,7 @@ export type Client = {
     status: ClientStatus; // Now dynamic
     dueDate: Date | Timestamp | null;
     createdAt: Date | Timestamp;
+    lastUpdatedAt?: Date | Timestamp | null;
     paymentMethod: 'pix' | 'cartao' | 'boleto' | null;
     amountPaid: number | null;
     isResale: boolean;
@@ -559,11 +560,7 @@ const AppDashboard = () => {
                         const msgDoc = doc(firestore, 'users', userId, 'scheduledGroupMessages', msg.id);
     
                         if (msg.isRecurring) {
-                            let nextSendAt = addDays(sendAt, 1);
-                            // If the calculated next send time is still in the past, set it for the next day from NOW.
-                            if (isPast(nextSendAt)) {
-                                nextSendAt = addDays(new Date(), 1);
-                            }
+                            let nextSendAt = addDays(new Date(), 1);
                             updateDoc(msgDoc, { sendAt: Timestamp.fromDate(nextSendAt), status: 'pending' });
                             toast({
                                 title: 'Mensagem Recorrente Enviada',
@@ -1023,9 +1020,13 @@ const DashboardPage = ({ clients, rawClients }: { clients: Client[], rawClients:
     
         return rawClients
             .filter(client => {
-                if (!client.amountPaid || !client.createdAt) return false;
-                const createdAtDate = client.createdAt instanceof Timestamp ? client.createdAt.toDate() : new Date(client.createdAt);
-                return isWithinInterval(createdAtDate, interval);
+                if (!client.amountPaid) return false;
+    
+                const eventDate = client.lastUpdatedAt 
+                    ? (client.lastUpdatedAt instanceof Timestamp ? client.lastUpdatedAt.toDate() : new Date(client.lastUpdatedAt))
+                    : (client.createdAt instanceof Timestamp ? client.createdAt.toDate() : new Date(client.createdAt));
+                
+                return isWithinInterval(eventDate, interval);
             })
             .reduce((total, client) => total + (client.amountPaid || 0), 0);
     
@@ -1276,6 +1277,7 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport, user
                 // Convert Timestamps to ISO strings for JSON compatibility
                 dueDate: client.dueDate ? (client.dueDate instanceof Timestamp ? client.dueDate.toDate().toISOString() : new Date(client.dueDate).toISOString()) : null,
                 createdAt: client.createdAt ? (client.createdAt instanceof Timestamp ? client.createdAt.toDate().toISOString() : new Date(client.createdAt).toISOString()) : null,
+                lastUpdatedAt: client.lastUpdatedAt ? (client.lastUpdatedAt instanceof Timestamp ? client.lastUpdatedAt.toDate().toISOString() : new Date(client.lastUpdatedAt).toISOString()) : null,
                 lastNotificationSent: client.lastNotificationSent ? (client.lastNotificationSent instanceof Timestamp ? client.lastNotificationSent.toDate().toISOString() : new Date(client.lastNotificationSent).toISOString()) : null,
                 lastReminderSent: client.lastReminderSent ? (client.lastReminderSent instanceof Timestamp ? client.lastReminderSent.toDate().toISOString() : new Date(client.lastReminderSent).toISOString()) : null,
                 lastRemarketingPostDueDateSent: client.lastRemarketingPostDueDateSent ? (client.lastRemarketingPostDueDateSent instanceof Timestamp ? client.lastRemarketingPostDueDateSent.toDate().toISOString() : new Date(client.lastRemarketingPostDueDateSent).toISOString()) : null,
@@ -1331,6 +1333,7 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport, user
                         ...clientData,
                         dueDate: clientData.dueDate ? Timestamp.fromDate(new Date(clientData.dueDate)) : null,
                         createdAt: clientData.createdAt ? Timestamp.fromDate(new Date(clientData.createdAt)) : Timestamp.now(),
+                        lastUpdatedAt: clientData.lastUpdatedAt ? Timestamp.fromDate(new Date(clientData.lastUpdatedAt)) : null,
                         lastNotificationSent: clientData.lastNotificationSent ? Timestamp.fromDate(new Date(clientData.lastNotificationSent)) : null,
                         lastReminderSent: clientData.lastReminderSent ? Timestamp.fromDate(new Date(clientData.lastReminderSent)) : null,
                         lastRemarketingPostDueDateSent: clientData.lastRemarketingPostDueDateSent ? Timestamp.fromDate(new Date(clientData.lastRemarketingPostDueDateSent)) : null,
@@ -1441,6 +1444,7 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport, user
             lastReminderSent: now,
             lastRemarketingPostDueDateSent: null,
             lastRemarketingPostRegistrationSent: null,
+            lastUpdatedAt: now,
             dueDate: client.dueDate ? (client.dueDate instanceof Timestamp ? client.dueDate : Timestamp.fromDate(new Date(client.dueDate))) : null,
             createdAt: now,
         };
@@ -1455,6 +1459,7 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport, user
         
         const dataToUpdate = {
             ...clientData,
+            lastUpdatedAt: Timestamp.now(),
             dueDate: clientData.dueDate ? (clientData.dueDate instanceof Timestamp ? clientData.dueDate : Timestamp.fromDate(new Date(clientData.dueDate))) : null,
             createdAt: clientData.createdAt ? (clientData.createdAt instanceof Timestamp ? clientData.createdAt : Timestamp.fromDate(new Date(clientData.createdAt))) : Timestamp.now(),
         };
@@ -2885,11 +2890,12 @@ const RenewSubscriptionDialog = ({ isOpen, onOpenChange, client, onSave }: { isO
     }, [isOpen, client]);
 
     const handleSaveRenewal = () => {
-        const updatedClient = {
+        const updatedClient: Client = {
             ...client,
             amountPaid: typeof amountPaid === 'string' ? parseFloat(amountPaid) : amountPaid,
             dueDate: dueDate,
             status: 'ativo' as const, // Explicitly set status to active on renewal
+            lastUpdatedAt: new Date(),
         };
         onSave(updatedClient);
     };
@@ -4672,15 +4678,15 @@ const TempEmailPage = ({ tempEmailState, setTempEmailState }: {
     };
     
     const logout = () => {
-        setTempEmailState({
+        setTempEmailState((prev: any) => ({
+            ...prev,
             status: 'idle',
             email: '',
             password: '',
             token: '',
             messages: [],
             seenMessageIds: new Set(),
-            savedAccounts: savedAccounts // Keep saved accounts on logout
-        });
+        }));
     };
 
     const generateAndLogin = async () => {
@@ -4761,9 +4767,9 @@ const TempEmailPage = ({ tempEmailState, setTempEmailState }: {
         if (!email || !password) return;
         const newAccount: SavedTempAccount = { email, pass: password, savedAt: new Date().toISOString() };
         
-        const newSavedAccounts = [newAccount, ...savedAccounts.filter(acc => acc.email !== email)];
+        const newSavedAccounts = [newAccount, ...savedAccounts.filter((acc: SavedTempAccount) => acc.email !== email)];
         
-        setTempEmailState(prev => ({ ...prev, savedAccounts: newSavedAccounts }));
+        setTempEmailState((prev: any) => ({ ...prev, savedAccounts: newSavedAccounts }));
 
         try {
             localStorage.setItem('temp_accounts', JSON.stringify(newSavedAccounts));
@@ -4775,8 +4781,8 @@ const TempEmailPage = ({ tempEmailState, setTempEmailState }: {
     };
 
     const deleteSavedAccount = (emailToDelete: string) => {
-        const newSavedAccounts = savedAccounts.filter(acc => acc.email !== emailToDelete);
-        setTempEmailState(prev => ({ ...prev, savedAccounts: newSavedAccounts }));
+        const newSavedAccounts = savedAccounts.filter((acc: SavedTempAccount) => acc.email !== emailToDelete);
+        setTempEmailState((prev: any) => ({ ...prev, savedAccounts: newSavedAccounts }));
         try {
             localStorage.setItem('temp_accounts', JSON.stringify(newSavedAccounts));
             toast({ title: 'Conta Removida', description: 'A conta foi removida da sua lista.' });
@@ -4813,7 +4819,7 @@ const TempEmailPage = ({ tempEmailState, setTempEmailState }: {
                         }
                     }));
 
-                    setTempEmailState(prev => ({
+                    setTempEmailState((prev: any) => ({
                         ...prev,
                         messages: [...messagesWithBody, ...prev.messages],
                         seenMessageIds: new Set([...prev.seenMessageIds, ...newMessages.map(m => m.id)])
@@ -4916,7 +4922,7 @@ const TempEmailPage = ({ tempEmailState, setTempEmailState }: {
                             <ScrollArea className="h-[500px] pr-4 -mr-4">
                                 {messages.length > 0 ? (
                                     <div className="space-y-4">
-                                        {messages.map(msg => (
+                                        {messages.map((msg: TempMessage) => (
                                             <Collapsible key={msg.id} className="border-b pb-4">
                                                 <CollapsibleTrigger className="w-full">
                                                     <div className="flex justify-between items-start text-left">
@@ -4967,7 +4973,7 @@ const LoginWithSaved = ({ onLogin, savedAccounts, onDelete }: { onLogin: (email:
                 <DropdownMenuLabel>Contas Salvas</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <ScrollArea className="h-[200px]">
-                    {savedAccounts.map(acc => (
+                    {savedAccounts.map((acc: SavedTempAccount) => (
                         <DropdownMenuItem key={acc.email} onSelect={(e) => e.preventDefault()} className="flex justify-between items-center">
                             <div className="flex-1 cursor-pointer" onClick={() => onLogin(acc.email, acc.pass)}>
                                 <p className="font-semibold truncate">{acc.email}</p>

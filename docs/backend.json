@@ -24,6 +24,7 @@
         "isPackage": { "type": "boolean", "description": "Indicates if the client is a package deal." },
         "quantity": { "type": "number", "description": "Number of accounts for resale clients." },
         "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when the client was added to the system." },
+        "lastUpdatedAt": { "type": "string", "format": "date-time", "description": "Timestamp when the client was last updated." },
         "lastNotificationSent": { "type": "string", "format": "date-time", "description": "Timestamp of the last automated due date notification sent." },
         "lastReminderSent": { "type": "string", "format": "date-time", "description": "Timestamp of the last automated reminder notification sent." },
         "lastRemarketingPostDueDateSent": { "type": "string", "format": "date-time", "description": "Timestamp of the last remarketing message sent after the due date." },
@@ -32,6 +33,15 @@
         "supportEmails": { "type": "array", "items": { "type": "string", "format": "email" }, "description": "List of emails marked for support for a resale client." }
       },
       "required": ["name", "phone", "emails", "subscription", "createdAt"]
+    },
+    "UserConnection": {
+      "title": "UserConnection",
+      "type": "object",
+      "description": "Represents a user's unique connection token.",
+      "properties": {
+        "token": { "type": "string", "description": "The unique connection token for the user." }
+      },
+      "required": ["token"]
     },
     "Subscription": {
       "title": "Subscription",
@@ -96,7 +106,7 @@
         "isRecurring": { "type": "boolean", "description": "Indicates if the message should be sent daily." },
         "imageBase64": { "type": "string", "description": "Base64 encoded image data for the attachment." }
       },
-      "required": ["groupId", "message", "sendAt", "status", "isRecurring"]
+      "required": ["groupId", "message", "sendAt", "status", "isRecurring", "imageBase64"]
     },
     "AdCampaign": {
       "title": "AdCampaign",
@@ -122,6 +132,14 @@
     "/users/{userId}/subscriptions/{subscriptionId}": {
       "schema": { "$ref": "#/entities/Subscription" },
       "description": "Stores all subscription plans for a specific user."
+    },
+    "/users/{userId}/user_connection/{connectionId}": {
+      "schema": { "$ref": "#/entities/UserConnection"},
+      "description": "Stores the user's unique connection token."
+    },
+    "/all_user_connections/{connectionId}": {
+      "schema": { "$ref": "#/entities/UserConnection"},
+      "description": "Stores all connection tokens across all users for uniqueness checks."
     },
     "/users/{userId}/whatsapp_connection/{connectionId}": {
         "schema": { "$ref": "#/entities/WhatsAppConnection" },
