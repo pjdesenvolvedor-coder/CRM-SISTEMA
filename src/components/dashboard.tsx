@@ -1551,12 +1551,19 @@ const ClientsPage = ({ clients, isLoading, subscriptions, onToggleSupport, userT
 
     const renderTableBody = () => {
         if (isLoading) {
-            return Array.from({ length: 5 }).map((_, index) => (
+            return Array.from({ length: 10 }).map((_, index) => (
                 <TableRow key={index}>
-                    <TableCell colSpan={6}>
-                        <div className="flex items-center gap-2">
-                            <Loader className="h-4 w-4 animate-spin"/>
-                            <span>Carregando...</span>
+                    <TableCell colSpan={6} className="py-2">
+                        <div className="flex items-center gap-4">
+                            <div className='flex items-center gap-2 flex-1'>
+                                <div className="h-5 w-5 rounded-full bg-muted animate-pulse" />
+                                <div className="h-4 bg-muted animate-pulse rounded-md w-3/4" />
+                            </div>
+                            <div className="h-4 bg-muted animate-pulse rounded-md w-1/4 hidden md:block" />
+                            <div className="h-6 w-20 bg-muted animate-pulse rounded-md" />
+                            <div className="h-4 bg-muted animate-pulse rounded-md w-1/4 hidden lg:block" />
+                            <div className="h-4 bg-muted animate-pulse rounded-md w-1/4 hidden md:block" />
+                             <div className="h-8 w-8 bg-muted animate-pulse rounded-md" />
                         </div>
                     </TableCell>
                 </TableRow>
