@@ -64,7 +64,7 @@ import { Checkbox } from './ui/checkbox';
 import { ScrollArea } from './ui/scroll-area';
 import { Separator } from './ui/separator';
 import { Badge } from './ui/badge';
-import { useFirestore, useCollection, addDoc, updateDoc, deleteDoc, useMemoFirebase } from '@/firebase';
+import { useFirestore, useCollection, addDoc, updateDoc, deleteDoc, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { collection, Timestamp, doc, writeBatch, query, orderBy, getDocs, where } from 'firebase/firestore';
 import { Switch } from './ui/switch';
 import {
@@ -214,7 +214,7 @@ const AppDashboard = () => {
     const [isTransitioningPage, startTransition] = useTransition();
     const { toast } = useToast();
 
-    const messagingPaths = ['/automacao', '/automacao/remarketing', '/automacao/grupos'];
+    const messagingPaths = ['/automacao', '/automacao/remarketing', '/automacao/grupos', '/automacao/disparo'];
     const clientPaths = ['/clientes', '/clientes/suporte'];
     const settingsPaths = ['/configuracoes'];
     const notesPaths = ['/notas', '/notas/anuncios'];
@@ -249,7 +249,7 @@ const AppDashboard = () => {
     const { data: userConnection, isLoading: userConnectionLoading } = useCollection<UserConnection>(userConnectionQuery);
     const userToken = useMemo(() => userConnection?.[0], [userConnection]);
 
-    const allConnectionsQuery = useMemoFirebase(() => firestore ? collection(firestore, 'all_user_connections') : null, [firestore]);
+    const allConnectionsQuery = useMemoFirebase(() => (firestore && userId) ? collection(firestore, 'all_user_connections') : null, [firestore, userId]);
     const { data: allConnections, isLoading: allConnectionsLoading } = useCollection<AllUserConnections>(allConnectionsQuery);
 
     const subscriptionsQuery = useMemoFirebase(() => (firestore && userId) ? collection(firestore, 'users', userId, 'subscriptions') : null, [firestore, userId]);
@@ -420,8 +420,8 @@ const AppDashboard = () => {
                     throw new Error(result.error);
                 }
                 
-                const clientDoc = doc(firestore, 'users', userId, 'clients', client.id);
-                let updateData = {};
+                const clientDocRef = doc(firestore, 'users', userId, 'clients', client.id);
+                let updateData:Partial<Client> = {};
                 let toastTitle = '';
                 let toastDescription = '';
     
@@ -448,7 +448,14 @@ const AppDashboard = () => {
                         break;
                 }
                 
-                updateDoc(clientDoc, updateData);
+                updateDoc(clientDocRef, updateData)
+                    .catch(err => {
+                        errorEmitter.emit('permission-error', new FirestorePermissionError({
+                            path: clientDocRef.path,
+                            operation: 'update',
+                            requestResourceData: updateData
+                        }));
+                    });
     
                 toast({
                     title: toastTitle,
@@ -528,15 +535,29 @@ const AppDashboard = () => {
         if (client.isResale || client.isPackage) {
             setSupportClient(client);
         } else {
-            const clientDoc = doc(firestore, 'users', userId, 'clients', client.id);
-            updateDoc(clientDoc, { isSupport: !client.isSupport, supportEmails: [] });
+            const clientDocRef = doc(firestore, 'users', userId, 'clients', client.id);
+            const updateData = { isSupport: !client.isSupport, supportEmails: [] };
+            updateDoc(clientDocRef, updateData).catch(err => {
+                errorEmitter.emit('permission-error', new FirestorePermissionError({
+                    path: clientDocRef.path,
+                    operation: 'update',
+                    requestResourceData: updateData
+                }));
+            });
         }
     }, [firestore, userId]);
     
     const handleSaveSupportEmails = useMemo(() => (clientId: string, supportEmails: string[]) => {
         if (!firestore || !userId) return;
-        const clientDoc = doc(firestore, 'users', userId, 'clients', clientId);
-        updateDoc(clientDoc, { supportEmails: supportEmails, isSupport: supportEmails.length > 0 });
+        const clientDocRef = doc(firestore, 'users', userId, 'clients', clientId);
+        const updateData = { supportEmails: supportEmails, isSupport: supportEmails.length > 0 };
+        updateDoc(clientDocRef, updateData).catch(err => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: clientDocRef.path,
+                operation: 'update',
+                requestResourceData: updateData
+            }));
+        });
         setSupportClient(null);
     }, [firestore, userId]);
 
@@ -557,17 +578,33 @@ const AppDashboard = () => {
                             throw new Error(result.error);
                         }
     
-                        const msgDoc = doc(firestore, 'users', userId, 'scheduledGroupMessages', msg.id);
-    
+                        const msgDocRef = doc(firestore, 'users', userId, 'scheduledGroupMessages', msg.id);
+                        
                         if (msg.isRecurring) {
-                            let nextSendAt = addDays(new Date(), 1);
-                            updateDoc(msgDoc, { sendAt: Timestamp.fromDate(nextSendAt), status: 'pending' });
+                            const now = new Date();
+                            // Set next send time to be 1 day from now, at the same time of day
+                            const nextSendAt = addDays(now, 1);
+                            const updateData = { sendAt: Timestamp.fromDate(nextSendAt), status: 'pending' };
+                            updateDoc(msgDocRef, updateData).catch(err => {
+                                errorEmitter.emit('permission-error', new FirestorePermissionError({
+                                    path: msgDocRef.path,
+                                    operation: 'update',
+                                    requestResourceData: updateData
+                                }));
+                            });
                             toast({
                                 title: 'Mensagem Recorrente Enviada',
                                 description: `Mensagem enviada para o grupo ${msg.groupId} e reagendada.`,
                             });
                         } else {
-                            updateDoc(msgDoc, { status: 'sent' });
+                            const updateData = { status: 'sent' };
+                             updateDoc(msgDocRef, updateData).catch(err => {
+                                errorEmitter.emit('permission-error', new FirestorePermissionError({
+                                    path: msgDocRef.path,
+                                    operation: 'update',
+                                    requestResourceData: updateData
+                                }));
+                            });
                             toast({
                                 title: 'Mensagem de Grupo Enviada',
                                 description: `Mensagem agendada enviada para o grupo ${msg.groupId}.`,
@@ -594,7 +631,7 @@ const AppDashboard = () => {
             case '/':
                 return <DashboardPage clients={transformedClients} rawClients={clients ?? []} />;
             case '/clientes':
-                return <ClientsPage clients={transformedClients} rawClients={clients ?? []} subscriptions={subscriptions ?? []} onToggleSupport={handleToggleSupport} userToken={userToken} />;
+                return <ClientsPage clients={transformedClients} isLoading={clientsLoading} subscriptions={subscriptions ?? []} onToggleSupport={handleToggleSupport} userToken={userToken} />;
             case '/clientes/suporte':
                 return <SupportPage clients={transformedClients} onToggleSupport={handleToggleSupport} setSupportClient={setSupportClient} userToken={userToken} />;
             case '/notas':
@@ -607,6 +644,8 @@ const AppDashboard = () => {
                 return <RemarketingPage config={automationSettings} />;
             case '/automacao/grupos':
                 return <GroupsPage scheduledMessages={scheduledMessages ?? []} />;
+             case '/automacao/disparo':
+                return <MassShootingPage clients={transformedClients} subscriptions={subscriptions ?? []} userToken={userToken} />;
             case '/configuracoes':
                 return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} connection={userToken} allConnections={allConnections ?? []}/>;
             case '/email-temp':
@@ -618,7 +657,7 @@ const AppDashboard = () => {
     
     const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading || adCampaignsLoading || userConnectionLoading || allConnectionsLoading;
 
-    const needsToken = !isUserLoading && !userToken;
+    const needsToken = !isUserLoading && !userConnectionLoading && userConnection?.length === 0;
 
     if (isLoading && !needsToken) {
         return (
@@ -707,6 +746,11 @@ const AppDashboard = () => {
                                     <Users2/> Grupos
                                 </SidebarMenuButton>
                             </Link>
+                            <Link href="/automacao/disparo" onClick={(e) => { e.preventDefault(); startTransition(() => { window.history.pushState(null, '', '/automacao/disparo'); }); }}>
+                                <SidebarMenuButton variant="ghost" className="w-full justify-start" isActive={pathname === '/automacao/disparo'}>
+                                    <Send/> Disparo
+                                </SidebarMenuButton>
+                            </Link>
                         </div>
                     </CollapsibleContent>
                 </Collapsible>
@@ -756,7 +800,7 @@ const AppDashboard = () => {
                         </SidebarMenuButton>
                     </DialogTrigger>
                     <DialogContent className="p-0 max-w-md bg-background/80 backdrop-blur-sm border-none">
-                        <DialogHeader className="sr-only">
+                       <DialogHeader className="sr-only">
                             <DialogTitle>Conexão WhatsApp</DialogTitle>
                             <DialogDescription>Gerencie sua conexão com o WhatsApp aqui.</DialogDescription>
                         </DialogHeader>
@@ -885,10 +929,12 @@ const ForceTokenSetupDialog = ({ allConnections, userId, firestore }: { allConne
                 const batch = writeBatch(firestore);
                 
                 const userConnRef = doc(collection(firestore, 'users', userId, 'user_connection'));
-                batch.set(userConnRef, { token: token.trim() });
+                const userConnData = { token: token.trim() };
+                batch.set(userConnRef, userConnData);
 
                 const allConnRef = doc(collection(firestore, 'all_user_connections'));
-                batch.set(allConnRef, { token: token.trim(), userId: userId });
+                const allConnData = { token: token.trim(), userId: userId };
+                batch.set(allConnRef, allConnData);
                 
                 await batch.commit();
 
@@ -897,9 +943,15 @@ const ForceTokenSetupDialog = ({ allConnections, userId, firestore }: { allConne
                     description: 'Sua chave de conexão foi definida.',
                 });
                 // The component will unmount automatically as the parent re-renders.
-            } catch (e) {
+            } catch (e: any) {
                 console.error("Error saving token:", e);
                 setError('Ocorreu um erro ao salvar a chave. Tente novamente.');
+                // Here we can also emit a contextual error if this fails due to rules
+                errorEmitter.emit('permission-error', new FirestorePermissionError({
+                    path: `users/${userId}/user_connection`,
+                    operation: 'create',
+                    requestResourceData: { token: token.trim() }
+                }));
             }
         });
     };
@@ -1233,7 +1285,7 @@ const ClientListDialog = ({ isOpen, onOpenChange, title, clients }: { isOpen: bo
 
 type SortableClientKeys = 'name' | 'status' | 'dueDate' | 'subscription' | 'emails';
 
-const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport, userToken }: { clients: Client[], rawClients: Client[], subscriptions: Subscription[], onToggleSupport: (client: Client) => void, userToken: UserConnection | undefined }) => {
+const ClientsPage = ({ clients, isLoading, subscriptions, onToggleSupport, userToken }: { clients: Client[], isLoading: boolean, subscriptions: Subscription[], onToggleSupport: (client: Client) => void, userToken: UserConnection | undefined }) => {
     const [editingClient, setEditingClient] = useState<Client | null>(null);
     const [isAddClientDialogOpen, setIsAddClientDialogOpen] = useState(false);
     const [sortConfig, setSortConfig] = useState<{ key: SortableClientKeys; direction: 'ascending' | 'descending' } | null>({ key: 'name', direction: 'ascending' });
@@ -1261,7 +1313,7 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport, user
     };
 
     const handleExportClients = () => {
-        if (!rawClients || rawClients.length === 0) {
+        if (!clients || clients.length === 0) {
             toast({
                 variant: 'destructive',
                 title: 'Nenhum cliente para exportar',
@@ -1270,7 +1322,7 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport, user
             return;
         }
 
-        const dataToExport = rawClients.map(client => {
+        const dataToExport = clients.map(client => {
             const { id, status, ...rest } = client; // Exclude id and derived status
             return {
                 ...rest,
@@ -1295,7 +1347,7 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport, user
 
         toast({
             title: 'Exportação Concluída',
-            description: `${rawClients.length} clientes foram exportados com sucesso.`,
+            description: `${clients.length} clientes foram exportados com sucesso.`,
         });
     };
 
@@ -1325,7 +1377,7 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport, user
                 const batch = writeBatch(firestore);
                 const clientsCol = collection(firestore, 'users', userId, 'clients');
 
-                importedClients.forEach(clientData => {
+                importedClients.forEach((clientData: any) => {
                     const newDocRef = doc(clientsCol); // Create a new document reference with a unique ID
                     
                     // Convert date strings back to Firestore Timestamps
@@ -1449,13 +1501,19 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport, user
             createdAt: now,
         };
         const clientsCol = collection(firestore, 'users', userId, 'clients');
-        addDoc(clientsCol, clientData);
+        addDoc(clientsCol, clientData).catch(err => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: clientsCol.path,
+                operation: 'create',
+                requestResourceData: clientData
+            }));
+        });
     };
     
     const handleUpdateClient = (updatedClient: Client) => {
         if (!firestore || !userId) return;
         const { id, status, ...clientData } = updatedClient; // remove derived status before saving
-        const clientDoc = doc(firestore, 'users', userId, 'clients', id);
+        const clientDocRef = doc(firestore, 'users', userId, 'clients', id);
         
         const dataToUpdate = {
             ...clientData,
@@ -1464,20 +1522,140 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport, user
             createdAt: clientData.createdAt ? (clientData.createdAt instanceof Timestamp ? clientData.createdAt : Timestamp.fromDate(new Date(clientData.createdAt))) : Timestamp.now(),
         };
     
-        updateDoc(clientDoc, dataToUpdate);
+        updateDoc(clientDocRef, dataToUpdate).catch(err => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: clientDocRef.path,
+                operation: 'update',
+                requestResourceData: dataToUpdate
+            }));
+        });
         setEditingClient(null);
     };
 
     const handleDeleteClient = (clientId: string) => {
         if(!firestore || !userId) return;
-        const clientDoc = doc(firestore, 'users', userId, 'clients', clientId);
-        deleteDoc(clientDoc);
+        const clientDocRef = doc(firestore, 'users', userId, 'clients', clientId);
+        deleteDoc(clientDocRef).catch(err => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: clientDocRef.path,
+                operation: 'delete'
+            }));
+        });
     };
 
     const statusConfig: Record<ClientStatus, { text: string; className: string; }> = {
         ativo: { text: "Ativo", className: "bg-green-500 hover:bg-green-600 border-transparent text-white" },
         vencido: { text: "Vencido", className: "bg-yellow-500 hover:bg-yellow-600 border-transparent text-white" },
         cancelado: { text: "Cancelado", className: "bg-red-500 hover:bg-red-600 border-transparent text-white" }
+    };
+
+    const renderTableBody = () => {
+        if (isLoading) {
+            return Array.from({ length: 5 }).map((_, index) => (
+                <TableRow key={index}>
+                    <TableCell colSpan={6}>
+                        <div className="flex items-center gap-2">
+                            <Loader className="h-4 w-4 animate-spin"/>
+                            <span>Carregando...</span>
+                        </div>
+                    </TableCell>
+                </TableRow>
+            ));
+        }
+
+        if (sortedClients.length > 0) {
+            return sortedClients.map((client) => {
+                const clientStatus = statusConfig[client.status];
+                return (
+                <TableRow key={client.id}>
+                    <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                            {client.isPackage ? (
+                                <Users className="h-5 w-5 text-green-500 flex-shrink-0" />
+                            ) : client.isResale ? (
+                                <Users className="h-5 w-5 text-red-500 flex-shrink-0" />
+                            ) : (
+                                <User className="h-5 w-5 text-yellow-400 flex-shrink-0" />
+                            )}
+                            {client.isSupport && <LifeBuoy className="h-5 w-5 text-blue-500 flex-shrink-0" />}
+                            <span className="truncate">{client.name}</span>
+                        </div>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                        <div className="flex items-center gap-1">
+                        <span className='truncate max-w-[150px]'>{client.emails[0]}</span>
+                        {client.emails.length > 1 && (
+                            <span className="text-xs text-muted-foreground">+{client.emails.length - 1}</span>
+                        )}
+                        </div>
+                    </TableCell>
+                    <TableCell>
+                        <Badge className={cn(clientStatus.className, "text-white")}>{clientStatus.text}</Badge>
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell">
+                        {client.dueDate ? format(new Date(client.dueDate as Date), 'dd/MM/yyyy') : 'N/A'}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">{client.subscription}</TableCell>
+                    <TableCell className="text-right">
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" className="h-8 w-8 p-0">
+                                    <span className="sr-only">Abrir menu</span>
+                                    <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <ViewClientDetailsDialog client={client} onEdit={() => setEditingClient(client)} subscriptions={subscriptions} onUpdateClient={handleUpdateClient} trigger={
+                                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                                        <Eye className="mr-2 h-4 w-4" />
+                                        <span>Visualizar Detalhes</span>
+                                    </DropdownMenuItem>
+                                }/>
+                                <SendMessageDialog client={client} userToken={userToken} trigger={
+                                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                                        <MessageSquare className="mr-2 h-4 w-4" />
+                                        <span>Enviar Mensagem</span>
+                                    </DropdownMenuItem>
+                                } />
+                                <DropdownMenuItem onClick={() => onToggleSupport(client)}>
+                                    <LifeBuoy className="mr-2 h-4 w-4" />
+                                    <span>Marcar Suporte</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <DropdownMenuItem className='text-destructive focus:text-destructive' onSelect={(e) => e.preventDefault()}>
+                                            <Trash className="mr-2 h-4 w-4" />
+                                            <span>Apagar Cliente</span>
+                                        </DropdownMenuItem>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                        <AlertDialogTitle>Você tem certeza?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                            Essa ação não pode ser desfeita. Isso excluirá permanentemente o cliente.
+                                        </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                        <AlertDialogAction onClick={() => handleDeleteClient(client.id)}>Apagar</AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </TableCell>
+                </TableRow>
+            )});
+        }
+
+        return (
+            <TableRow>
+                <TableCell colSpan={6} className="h-24 text-center">
+                    Nenhum cliente encontrado.
+                </TableCell>
+            </TableRow>
+        );
     };
 
     return (
@@ -1579,97 +1757,7 @@ const ClientsPage = ({ clients, rawClients, subscriptions, onToggleSupport, user
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {sortedClients.length > 0 ? (
-                            sortedClients.map((client) => {
-                                const clientStatus = statusConfig[client.status];
-                                return (
-                                <TableRow key={client.id}>
-                                    <TableCell className="font-medium">
-                                        <div className="flex items-center gap-2">
-                                            {client.isPackage ? (
-                                                <Users className="h-5 w-5 text-green-500 flex-shrink-0" />
-                                            ) : client.isResale ? (
-                                                <Users className="h-5 w-5 text-red-500 flex-shrink-0" />
-                                            ) : (
-                                                <User className="h-5 w-5 text-yellow-400 flex-shrink-0" />
-                                            )}
-                                            {client.isSupport && <LifeBuoy className="h-5 w-5 text-blue-500 flex-shrink-0" />}
-                                            <span className="truncate">{client.name}</span>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="hidden md:table-cell">
-                                      <div className="flex items-center gap-1">
-                                        <span className='truncate max-w-[150px]'>{client.emails[0]}</span>
-                                        {client.emails.length > 1 && (
-                                            <span className="text-xs text-muted-foreground">+{client.emails.length - 1}</span>
-                                        )}
-                                      </div>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Badge className={cn(clientStatus.className, "text-white")}>{clientStatus.text}</Badge>
-                                    </TableCell>
-                                    <TableCell className="hidden lg:table-cell">
-                                        {client.dueDate ? format(new Date(client.dueDate as Date), 'dd/MM/yyyy') : 'N/A'}
-                                    </TableCell>
-                                    <TableCell className="hidden md:table-cell">{client.subscription}</TableCell>
-                                    <TableCell className="text-right">
-                                        <DropdownMenu>
-                                            <DropdownMenuTrigger asChild>
-                                                <Button variant="ghost" className="h-8 w-8 p-0">
-                                                    <span className="sr-only">Abrir menu</span>
-                                                    <MoreHorizontal className="h-4 w-4" />
-                                                </Button>
-                                            </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end">
-                                                <ViewClientDetailsDialog client={client} onEdit={() => setEditingClient(client)} subscriptions={subscriptions} onUpdateClient={handleUpdateClient} trigger={
-                                                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                                                        <Eye className="mr-2 h-4 w-4" />
-                                                        <span>Visualizar Detalhes</span>
-                                                    </DropdownMenuItem>
-                                                }/>
-                                                <SendMessageDialog client={client} userToken={userToken} trigger={
-                                                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                                                        <MessageSquare className="mr-2 h-4 w-4" />
-                                                        <span>Enviar Mensagem</span>
-                                                    </DropdownMenuItem>
-                                                } />
-                                                <DropdownMenuItem onClick={() => onToggleSupport(client)}>
-                                                    <LifeBuoy className="mr-2 h-4 w-4" />
-                                                    <span>Marcar Suporte</span>
-                                                </DropdownMenuItem>
-                                                <DropdownMenuSeparator />
-                                                <AlertDialog>
-                                                    <AlertDialogTrigger asChild>
-                                                        <DropdownMenuItem className='text-destructive focus:text-destructive' onSelect={(e) => e.preventDefault()}>
-                                                            <Trash className="mr-2 h-4 w-4" />
-                                                            <span>Apagar Cliente</span>
-                                                        </DropdownMenuItem>
-                                                    </AlertDialogTrigger>
-                                                    <AlertDialogContent>
-                                                        <AlertDialogHeader>
-                                                        <AlertDialogTitle>Você tem certeza?</AlertDialogTitle>
-                                                        <AlertDialogDescription>
-                                                            Essa ação não pode ser desfeita. Isso excluirá permanentemente o cliente.
-                                                        </AlertDialogDescription>
-                                                        </AlertDialogHeader>
-                                                        <AlertDialogFooter>
-                                                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                                        <AlertDialogAction onClick={() => handleDeleteClient(client.id)}>Apagar</AlertDialogAction>
-                                                        </AlertDialogFooter>
-                                                    </AlertDialogContent>
-                                                </AlertDialog>
-                                            </DropdownMenuContent>
-                                        </DropdownMenu>
-                                    </TableCell>
-                                </TableRow>
-                            )})
-                        ) : (
-                            <TableRow>
-                                <TableCell colSpan={6} className="h-24 text-center">
-                                    Nenhum cliente encontrado.
-                                </TableCell>
-                            </TableRow>
-                        )}
+                        {renderTableBody()}
                     </TableBody>
                 </Table>
             </ScrollArea>
@@ -2234,7 +2322,13 @@ const SettingsPage = ({ subscriptions, allClients, connection, allConnections }:
           price: parseFloat(newSubscriptionPrice),
         };
         const subscriptionsCol = collection(firestore, 'users', userId, 'subscriptions');
-        addDoc(subscriptionsCol, newSubscription);
+        addDoc(subscriptionsCol, newSubscription).catch(err => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: subscriptionsCol.path,
+                operation: 'create',
+                requestResourceData: newSubscription
+            }));
+        });
         setNewSubscriptionName('');
         setNewSubscriptionPrice('');
       }
@@ -2242,8 +2336,13 @@ const SettingsPage = ({ subscriptions, allClients, connection, allConnections }:
 
     const handleDeleteSubscription = (subscriptionId: string) => {
         if (!firestore || !userId) return;
-        const subDoc = doc(firestore, 'users', userId, 'subscriptions', subscriptionId);
-        deleteDoc(subDoc);
+        const subDocRef = doc(firestore, 'users', userId, 'subscriptions', subscriptionId);
+        deleteDoc(subDocRef).catch(err => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: subDocRef.path,
+                operation: 'delete'
+            }));
+        });
     };
 
     const openEditDialog = (subscription: Subscription) => {
@@ -2254,10 +2353,17 @@ const SettingsPage = ({ subscriptions, allClients, connection, allConnections }:
 
     const handleEditSubscription = () => {
         if (editingSubscription && editedName.trim() && editedPrice && firestore && userId) {
-            const subDoc = doc(firestore, 'users', userId, 'subscriptions', editingSubscription.id);
-            updateDoc(subDoc, {
+            const subDocRef = doc(firestore, 'users', userId, 'subscriptions', editingSubscription.id);
+            const updateData = {
                 name: editedName.trim(),
                 price: parseFloat(editedPrice)
+            };
+            updateDoc(subDocRef, updateData).catch(err => {
+                errorEmitter.emit('permission-error', new FirestorePermissionError({
+                    path: subDocRef.path,
+                    operation: 'update',
+                    requestResourceData: updateData
+                }));
             });
             setEditingSubscription(null);
             setEditedName('');
@@ -2303,6 +2409,10 @@ const SettingsPage = ({ subscriptions, allClients, connection, allConnections }:
                     title: 'Erro ao Apagar',
                     description: 'Não foi possível apagar os clientes. Tente novamente.',
                 });
+                 errorEmitter.emit('permission-error', new FirestorePermissionError({
+                    path: `users/${userId}/clients`,
+                    operation: 'delete' // This is a batch delete, so path is illustrative
+                }));
             }
         });
     };
@@ -3048,11 +3158,23 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
         };
 
         if (config?.id) {
-          const configDoc = doc(firestore, 'users', userId, 'automation', config.id);
-          updateDoc(configDoc, dataToSave);
+          const configDocRef = doc(firestore, 'users', userId, 'automation', config.id);
+          updateDoc(configDocRef, dataToSave).catch(err => {
+              errorEmitter.emit('permission-error', new FirestorePermissionError({
+                  path: configDocRef.path,
+                  operation: 'update',
+                  requestResourceData: dataToSave
+              }));
+          });
         } else {
           const automationCol = collection(firestore, 'users', userId, 'automation');
-          addDoc(automationCol, dataToSave);
+          addDoc(automationCol, dataToSave).catch(err => {
+              errorEmitter.emit('permission-error', new FirestorePermissionError({
+                  path: automationCol.path,
+                  operation: 'create',
+                  requestResourceData: dataToSave
+              }));
+          });
         }
   
         toast({
@@ -3455,11 +3577,23 @@ const RemarketingPage = ({ config }: { config: AutomationConfig | undefined }) =
         };
 
         if (config?.id) {
-          const configDoc = doc(firestore, 'users', userId, 'automation', config.id);
-          updateDoc(configDoc, dataToSave);
+          const configDocRef = doc(firestore, 'users', userId, 'automation', config.id);
+          updateDoc(configDocRef, dataToSave).catch(err => {
+              errorEmitter.emit('permission-error', new FirestorePermissionError({
+                  path: configDocRef.path,
+                  operation: 'update',
+                  requestResourceData: dataToSave
+              }));
+          });
         } else {
           const automationCol = collection(firestore, 'users', userId, 'automation');
-          addDoc(automationCol, dataToSave);
+          addDoc(automationCol, dataToSave).catch(err => {
+              errorEmitter.emit('permission-error', new FirestorePermissionError({
+                  path: automationCol.path,
+                  operation: 'create',
+                  requestResourceData: dataToSave
+              }));
+          });
         }
   
         toast({
@@ -3612,7 +3746,13 @@ const NotesPage = ({ notes }: { notes: Note[] }) => {
         };
 
         const notesCol = collection(firestore, 'users', userId, 'notes');
-        addDoc(notesCol, newNote);
+        addDoc(notesCol, newNote).catch(err => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: notesCol.path,
+                operation: 'create',
+                requestResourceData: newNote
+            }));
+        });
         setNoteContent('');
         setIsPopoverOpen(false);
         toast({ title: 'Sucesso!', description: 'Sua nota foi adicionada.' });
@@ -3620,14 +3760,25 @@ const NotesPage = ({ notes }: { notes: Note[] }) => {
 
     const handleUpdateNote = (noteId: string, updates: Partial<Note>) => {
         if (!firestore || !userId) return;
-        const noteDoc = doc(firestore, 'users', userId, 'notes', noteId);
-        updateDoc(noteDoc, updates);
+        const noteDocRef = doc(firestore, 'users', userId, 'notes', noteId);
+        updateDoc(noteDocRef, updates).catch(err => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: noteDocRef.path,
+                operation: 'update',
+                requestResourceData: updates
+            }));
+        });
     };
 
     const handleDeleteNote = (noteId: string) => {
         if (!firestore || !userId) return;
-        const noteDoc = doc(firestore, 'users', userId, 'notes', noteId);
-        deleteDoc(noteDoc);
+        const noteDocRef = doc(firestore, 'users', userId, 'notes', noteId);
+        deleteDoc(noteDocRef).catch(err => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: noteDocRef.path,
+                operation: 'delete'
+            }));
+        });
     };
 
     const onDragEnd = (result: DropResult) => {
@@ -3972,21 +4123,39 @@ const GroupMessageScheduler = ({ scheduledMessages }: { scheduledMessages: Sched
 
         if (editingMessage) {
             // Update
-            const msgDoc = doc(firestore, 'users', userId, 'scheduledGroupMessages', editingMessage.id);
-            updateDoc(msgDoc, messageData);
+            const msgDocRef = doc(firestore, 'users', userId, 'scheduledGroupMessages', editingMessage.id);
+            updateDoc(msgDocRef, messageData).catch(err => {
+                errorEmitter.emit('permission-error', new FirestorePermissionError({
+                    path: msgDocRef.path,
+                    operation: 'update',
+                    requestResourceData: messageData
+                }));
+            });
             setEditingMessage(null);
         } else {
             // Add
             const scheduledMessagesCol = collection(firestore, 'users', userId, 'scheduledGroupMessages');
-            addDoc(scheduledMessagesCol, { ...messageData, status: 'pending' });
+            const data = { ...messageData, status: 'pending' as const };
+            addDoc(scheduledMessagesCol, data).catch(err => {
+                errorEmitter.emit('permission-error', new FirestorePermissionError({
+                    path: scheduledMessagesCol.path,
+                    operation: 'create',
+                    requestResourceData: data
+                }));
+            });
         }
         setIsScheduling(false);
     };
 
     const handleDeleteMessage = (messageId: string) => {
         if (!firestore || !userId) return;
-        const msgDoc = doc(firestore, 'users', userId, 'scheduledGroupMessages', messageId);
-        deleteDoc(msgDoc);
+        const msgDocRef = doc(firestore, 'users', userId, 'scheduledGroupMessages', messageId);
+        deleteDoc(msgDocRef).catch(err => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: msgDocRef.path,
+                operation: 'delete'
+            }));
+        });
     };
 
     const openEditDialog = (message: ScheduledGroupMessage) => {
@@ -4356,11 +4525,23 @@ const AdsPage = ({ campaigns }: { campaigns: AdCampaign[] }) => {
         if (!firestore || !userId) return;
 
         if (editingCampaign) {
-            const campaignDoc = doc(firestore, 'users', userId, 'adCampaigns', editingCampaign.id);
-            updateDoc(campaignDoc, campaignData);
+            const campaignDocRef = doc(firestore, 'users', userId, 'adCampaigns', editingCampaign.id);
+            updateDoc(campaignDocRef, campaignData).catch(err => {
+                errorEmitter.emit('permission-error', new FirestorePermissionError({
+                    path: campaignDocRef.path,
+                    operation: 'update',
+                    requestResourceData: campaignData
+                }));
+            });
         } else {
             const campaignsCol = collection(firestore, 'users', userId, 'adCampaigns');
-            addDoc(campaignsCol, campaignData);
+            addDoc(campaignsCol, campaignData).catch(err => {
+                errorEmitter.emit('permission-error', new FirestorePermissionError({
+                    path: campaignsCol.path,
+                    operation: 'create',
+                    requestResourceData: campaignData
+                }));
+            });
         }
         setIsDialogOpen(false);
         setEditingCampaign(null);
@@ -4368,8 +4549,13 @@ const AdsPage = ({ campaigns }: { campaigns: AdCampaign[] }) => {
 
     const handleDeleteCampaign = (campaignId: string) => {
         if (!firestore || !userId) return;
-        const campaignDoc = doc(firestore, 'users', userId, 'adCampaigns', campaignId);
-        deleteDoc(campaignDoc);
+        const campaignDocRef = doc(firestore, 'users', userId, 'adCampaigns', campaignId);
+        deleteDoc(campaignDocRef).catch(err => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: campaignDocRef.path,
+                operation: 'delete'
+            }));
+        });
     };
 
     return (
@@ -5006,6 +5192,161 @@ const LoginWithSaved = ({ onLogin, savedAccounts, onDelete }: { onLogin: (email:
                 </ScrollArea>
             </DropdownMenuContent>
         </DropdownMenu>
+    );
+};
+
+const MassShootingPage = ({ clients, subscriptions, userToken }: { clients: Client[], subscriptions: Subscription[], userToken: UserConnection | undefined }) => {
+    const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('vencido');
+    const [subscriptionFilter, setSubscriptionFilter] = useState<string | 'all'>('all');
+    const [message, setMessage] = useState('');
+    const [isSending, setIsSending] = useState(false);
+    const [progress, setProgress] = useState({ total: 0, sent: 0, currentClient: '' });
+    const { toast } = useToast();
+
+    const filteredClients = useMemo(() => {
+        return clients.filter(client => {
+            const statusMatch = statusFilter === 'all' || client.status === statusFilter;
+            const subscriptionMatch = subscriptionFilter === 'all' || client.subscription === subscriptionFilter;
+            return statusMatch && subscriptionMatch;
+        });
+    }, [clients, statusFilter, subscriptionFilter]);
+    
+    const handleStartSending = async () => {
+        if (filteredClients.length === 0) {
+            toast({ variant: 'destructive', title: 'Nenhum cliente encontrado', description: 'Nenhum cliente corresponde aos filtros selecionados.' });
+            return;
+        }
+        if (!message.trim()) {
+            toast({ variant: 'destructive', title: 'Mensagem vazia', description: 'A mensagem não pode estar em branco.' });
+            return;
+        }
+
+        setIsSending(true);
+        setProgress({ total: filteredClients.length, sent: 0, currentClient: '' });
+
+        for (let i = 0; i < filteredClients.length; i++) {
+            const client = filteredClients[i];
+            setProgress(prev => ({ ...prev, currentClient: client.name, sent: i }));
+
+            const clientDueDate = client.dueDate ? new Date(client.dueDate as Date) : null;
+            const formattedMessage = message
+                .replace(/{cliente}/g, client.name)
+                .replace(/{telefone}/g, client.phone)
+                .replace(/{email}/g, client.emails[0] || '')
+                .replace(/{assinatura}/g, client.subscription)
+                .replace(/{vencimento}/g, clientDueDate ? format(clientDueDate, 'dd/MM/yyyy HH:mm') : 'N/A')
+                .replace(/{valor}/g, client.amountPaid ? client.amountPaid.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'N/A')
+                .replace(/{status}/g, client.status);
+
+            try {
+                const result = await sendMessage(client.phone, formattedMessage, userToken?.token);
+                if (result.error) {
+                    throw new Error(result.error);
+                }
+                toast({ title: 'Mensagem Enviada', description: `Enviada para ${client.name}.` });
+            } catch (error) {
+                toast({ variant: 'destructive', title: `Falha ao enviar para ${client.name}`, description: error instanceof Error ? error.message : 'Erro desconhecido.' });
+            }
+
+            // Wait for 5 seconds before the next message
+            if (i < filteredClients.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+        }
+
+        setIsSending(false);
+        setProgress({ total: 0, sent: 0, currentClient: '' });
+        toast({ title: 'Disparos Concluídos!', description: `Processo de envio finalizado para ${filteredClients.length} clientes.` });
+    };
+
+    const availableTags = ['{cliente}', '{telefone}', '{email}', '{assinatura}', '{vencimento}', '{valor}', '{status}'];
+
+
+    return (
+        <div className="w-full space-y-6">
+            <div className='text-center sm:text-left'>
+                <h2 className="text-2xl font-bold">Disparo em Massa</h2>
+                <p className="text-muted-foreground">Envie mensagens para um grupo de clientes selecionado.</p>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Filtros e Mensagem</CardTitle>
+                    <CardDescription>Selecione o público e escreva a mensagem para o disparo.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid gap-2">
+                            <Label>Status do Cliente</Label>
+                            <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as any)}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Selecione um status" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">Todos os Status</SelectItem>
+                                    <SelectItem value="ativo">Ativo</SelectItem>
+                                    <SelectItem value="vencido">Vencido</SelectItem>
+                                    <SelectItem value="cancelado">Cancelado</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="grid gap-2">
+                            <Label>Produto / Assinatura</Label>
+                             <Select value={subscriptionFilter} onValueChange={setSubscriptionFilter}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Selecione um produto" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">Todos os Produtos</SelectItem>
+                                    {subscriptions.map(sub => (
+                                        <SelectItem key={sub.id} value={sub.name}>{sub.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+                     <div className="grid gap-2">
+                        <Label htmlFor="mass-message">Mensagem</Label>
+                        <Textarea
+                            id="mass-message"
+                            placeholder="Digite sua mensagem aqui..."
+                            value={message}
+                            onChange={(e) => setMessage(e.target.value)}
+                            className="min-h-[150px]"
+                            disabled={isSending}
+                        />
+                        <div className="text-sm text-muted-foreground">
+                            <p>Variáveis disponíveis:</p>
+                            <div className="flex flex-wrap gap-x-2 gap-y-1 mt-1">
+                                {availableTags.map(tag => (
+                                    <code key={tag} className="bg-muted px-1.5 py-0.5 rounded-sm text-xs">{tag}</code>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </CardContent>
+                <CardFooter className="flex flex-col items-center gap-4">
+                     <Button onClick={handleStartSending} disabled={isSending} className="w-full sm:w-auto">
+                        {isSending ? (
+                            <>
+                                <Loader className="mr-2 h-4 w-4 animate-spin" />
+                                <span>Enviando... ({progress.sent}/{progress.total})</span>
+                            </>
+                        ) : (
+                             <>
+                                <Send className="mr-2 h-4 w-4" />
+                                <span>Iniciar Disparos para {filteredClients.length} cliente(s)</span>
+                            </>
+                        )}
+                    </Button>
+                    {isSending && (
+                        <div className="w-full text-center">
+                            <Progress value={(progress.sent / progress.total) * 100} className="w-full mb-2" />
+                            <p className="text-sm text-muted-foreground">Enviando para: <span className="font-semibold">{progress.currentClient}</span>...</p>
+                        </div>
+                    )}
+                </CardFooter>
+            </Card>
+        </div>
     );
 };
 
