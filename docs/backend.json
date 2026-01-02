@@ -79,7 +79,9 @@
             "remarketingPostDueDateIsEnabled": { "type": "boolean", "description": "Whether post-due date remarketing is enabled." },
             "remarketingPostRegistrationDays": { "type": "number", "description": "Days after registration to send remarketing message." },
             "remarketingPostRegistrationMessage": { "type": "string", "description": "Message for post-registration remarketing." },
-            "remarketingPostRegistrationIsEnabled": { "type": "boolean", "description": "Whether post-registration remarketing is enabled." }
+            "remarketingPostRegistrationIsEnabled": { "type": "boolean", "description": "Whether post-registration remarketing is enabled." },
+            "supportStartMessage": { "type": "string", "description": "Message sent when a client is marked for support." },
+            "supportEndMessage": { "type": "string", "description": "Message sent when a client's support is resolved." }
         },
         "required": ["isEnabled", "message", "reminderIsEnabled", "reminderMessage"]
     },
@@ -132,14 +134,6 @@
     "/users/{userId}/subscriptions/{subscriptionId}": {
       "schema": { "$ref": "#/entities/Subscription" },
       "description": "Stores all subscription plans for a specific user."
-    },
-    "/users/{userId}/user_connection/{connectionId}": {
-      "schema": { "$ref": "#/entities/UserConnection"},
-      "description": "Stores the user's unique connection token."
-    },
-    "/all_user_connections/{connectionId}": {
-      "schema": { "$ref": "#/entities/UserConnection"},
-      "description": "Stores all connection tokens across all users for uniqueness checks."
     },
     "/users/{userId}/whatsapp_connection/{connectionId}": {
         "schema": { "$ref": "#/entities/WhatsAppConnection" },

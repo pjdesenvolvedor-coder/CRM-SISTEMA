@@ -81,3 +81,6 @@ export function useMemoFirebase<T>(factory: () => T, deps: DependencyList): T | 
  * Hook specifically for accessing the authenticated user's state.
  */
 export const useUser = useUserHook;
+
+export const getAuth = () => initializeFirebase().auth;
+export const getStorage = () => initializeFirebase().storage;

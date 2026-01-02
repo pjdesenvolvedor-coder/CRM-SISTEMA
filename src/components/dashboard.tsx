@@ -123,6 +123,8 @@ type AutomationConfig = {
     remarketingPostRegistrationDays: number;
     remarketingPostRegistrationMessage: string;
     remarketingPostRegistrationIsEnabled: boolean;
+    supportStartMessage?: string;
+    supportEndMessage?: string;
 }
 
 type Note = {
@@ -248,9 +250,6 @@ const AppDashboard = () => {
     const userConnectionQuery = useMemoFirebase(() => (firestore && userId) ? collection(firestore, 'users', userId, 'user_connection') : null, [firestore, userId]);
     const { data: userConnection, isLoading: userConnectionLoading } = useCollection<UserConnection>(userConnectionQuery);
     const userToken = useMemo(() => userConnection?.[0], [userConnection]);
-
-    const allConnectionsQuery = useMemoFirebase(() => (firestore && userId) ? collection(firestore, 'all_user_connections') : null, [firestore, userId]);
-    const { data: allConnections, isLoading: allConnectionsLoading } = useCollection<AllUserConnections>(allConnectionsQuery);
 
     const subscriptionsQuery = useMemoFirebase(() => (firestore && userId) ? collection(firestore, 'users', userId, 'subscriptions') : null, [firestore, userId]);
     const { data: subscriptions, isLoading: subscriptionsLoading } = useCollection<Subscription>(subscriptionsQuery);
@@ -409,7 +408,7 @@ const AppDashboard = () => {
             .replace(/{status}/g, client.status);
     }, []);
 
-    const sendAutomationMessage = useMemo(() => (client: Client, message: string, type: 'due' | 'reminder' | 'remarketing-due' | 'remarketing-reg') => {
+    const sendAutomationMessage = useMemo(() => (client: Client, message: string, type: 'due' | 'reminder' | 'remarketing-due' | 'remarketing-reg' | 'support-start' | 'support-end') => {
         if (!firestore || !userId) return;
     
         const formattedMessage = formatMessage(message, client);
@@ -446,16 +445,26 @@ const AppDashboard = () => {
                         toastTitle = 'Remarketing Pós-Cadastro Enviado';
                         toastDescription = `Mensagem de remarketing enviada para ${client.name}.`;
                         break;
+                    case 'support-start':
+                        toastTitle = 'Notificação de Suporte Enviada';
+                        toastDescription = `Mensagem de início de suporte enviada para ${client.name}.`;
+                        break;
+                     case 'support-end':
+                        toastTitle = 'Notificação de Suporte Enviada';
+                        toastDescription = `Mensagem de conclusão de suporte enviada para ${client.name}.`;
+                        break;
                 }
                 
-                updateDoc(clientDocRef, updateData)
-                    .catch(err => {
-                        errorEmitter.emit('permission-error', new FirestorePermissionError({
-                            path: clientDocRef.path,
-                            operation: 'update',
-                            requestResourceData: updateData
-                        }));
-                    });
+                if (Object.keys(updateData).length > 0) {
+                    updateDoc(clientDocRef, updateData)
+                        .catch(err => {
+                            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                                path: clientDocRef.path,
+                                operation: 'update',
+                                requestResourceData: updateData
+                            }));
+                        });
+                }
     
                 toast({
                     title: toastTitle,
@@ -532,12 +541,21 @@ const AppDashboard = () => {
     const handleToggleSupport = useMemo(() => (client: Client) => {
         if (!firestore || !userId) return;
         
-        if (client.isResale || client.isPackage) {
+        const isCurrentlySupport = client.isSupport;
+        const newSupportStatus = !isCurrentlySupport;
+
+        if (newSupportStatus && (client.isResale || client.isPackage)) {
             setSupportClient(client);
         } else {
             const clientDocRef = doc(firestore, 'users', userId, 'clients', client.id);
-            const updateData = { isSupport: !client.isSupport, supportEmails: [] };
-            updateDoc(clientDocRef, updateData).catch(err => {
+            const updateData = { isSupport: newSupportStatus, supportEmails: [] };
+            updateDoc(clientDocRef, updateData)
+            .then(() => {
+                if(newSupportStatus && automationSettings?.supportStartMessage) {
+                    sendAutomationMessage(client, automationSettings.supportStartMessage, 'support-start');
+                }
+            })
+            .catch(err => {
                 errorEmitter.emit('permission-error', new FirestorePermissionError({
                     path: clientDocRef.path,
                     operation: 'update',
@@ -545,13 +563,24 @@ const AppDashboard = () => {
                 }));
             });
         }
-    }, [firestore, userId]);
+    }, [firestore, userId, automationSettings, sendAutomationMessage]);
     
     const handleSaveSupportEmails = useMemo(() => (clientId: string, supportEmails: string[]) => {
         if (!firestore || !userId) return;
+        const client = transformedClients.find(c => c.id === clientId);
+        if (!client) return;
+
         const clientDocRef = doc(firestore, 'users', userId, 'clients', clientId);
-        const updateData = { supportEmails: supportEmails, isSupport: supportEmails.length > 0 };
-        updateDoc(clientDocRef, updateData).catch(err => {
+        const newSupportStatus = supportEmails.length > 0;
+        const updateData = { supportEmails: supportEmails, isSupport: newSupportStatus };
+        
+        updateDoc(clientDocRef, updateData)
+        .then(() => {
+            if (newSupportStatus && automationSettings?.supportStartMessage) {
+                sendAutomationMessage(client, automationSettings.supportStartMessage, 'support-start');
+            }
+        })
+        .catch(err => {
             errorEmitter.emit('permission-error', new FirestorePermissionError({
                 path: clientDocRef.path,
                 operation: 'update',
@@ -559,7 +588,7 @@ const AppDashboard = () => {
             }));
         });
         setSupportClient(null);
-    }, [firestore, userId]);
+    }, [firestore, userId, automationSettings, sendAutomationMessage, transformedClients]);
 
     useEffect(() => {
         if (!scheduledMessages || !firestore || !userId || !userToken) {
@@ -633,7 +662,7 @@ const AppDashboard = () => {
             case '/clientes':
                 return <ClientsPage clients={transformedClients} isLoading={clientsLoading} subscriptions={subscriptions ?? []} onToggleSupport={handleToggleSupport} userToken={userToken} />;
             case '/clientes/suporte':
-                return <SupportPage clients={transformedClients} onToggleSupport={handleToggleSupport} setSupportClient={setSupportClient} userToken={userToken} />;
+                return <SupportPage clients={transformedClients} onToggleSupport={handleToggleSupport} setSupportClient={setSupportClient} userToken={userToken} automationSettings={automationSettings} sendAutomationMessage={sendAutomationMessage} />;
             case '/notas':
                 return <NotesPage notes={notes ?? []} />;
             case '/notas/anuncios':
@@ -647,7 +676,7 @@ const AppDashboard = () => {
              case '/automacao/disparo':
                 return <MassShootingPage clients={transformedClients} subscriptions={subscriptions ?? []} userToken={userToken} />;
             case '/configuracoes':
-                return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} connection={userToken} allConnections={allConnections ?? []}/>;
+                return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} />;
             case '/email-temp':
                 return <TempEmailPage tempEmailState={tempEmailState} setTempEmailState={setTempEmailState} />;
             default:
@@ -655,11 +684,9 @@ const AppDashboard = () => {
         }
     };
     
-    const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading || adCampaignsLoading || userConnectionLoading || allConnectionsLoading;
+    const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading || adCampaignsLoading || userConnectionLoading;
 
-    const needsToken = !isUserLoading && !userConnectionLoading && userConnection?.length === 0;
-
-    if (isLoading && !needsToken) {
+    if (isLoading) {
         return (
             <div className="flex h-screen w-full items-center justify-center">
                 <Loader className="h-12 w-12 animate-spin text-primary" />
@@ -873,13 +900,6 @@ const AppDashboard = () => {
         </SidebarFooter>
       </Sidebar>
       <SidebarInset className={cn("flex min-h-screen w-full flex-col bg-background", isTransitioningPage && "opacity-50 transition-opacity")}>
-        {needsToken && (
-            <ForceTokenSetupDialog 
-                allConnections={allConnections ?? []} 
-                userId={userId ?? ''} 
-                firestore={firestore} 
-            />
-        )}
         <header className="sticky top-0 z-10 flex h-14 items-center justify-between gap-4 border-b bg-background px-4 sm:px-6 md:hidden">
             <h1 className="text-xl font-semibold text-center">ZapConnect</h1>
             <SidebarTrigger />
@@ -898,99 +918,6 @@ const AppDashboard = () => {
       </SidebarInset>
     </div>
   );
-};
-
-const ForceTokenSetupDialog = ({ allConnections, userId, firestore }: { allConnections: AllUserConnections[], userId: string, firestore: any }) => {
-    const [token, setToken] = useState('');
-    const [isPending, startTransition] = useTransition();
-    const { toast } = useToast();
-    const [error, setError] = useState('');
-
-    const handleSaveToken = () => {
-        setError('');
-        if (!token.trim()) {
-            setError('O token não pode estar em branco.');
-            return;
-        }
-
-        const isTokenInUse = allConnections.some(conn => conn.token === token.trim());
-        if (isTokenInUse) {
-            setError('Essa chave já está em uso. Por favor, escolha outra.');
-            return;
-        }
-
-        startTransition(async () => {
-            if (!firestore || !userId) {
-                toast({ variant: 'destructive', title: 'Erro', description: 'Usuário ou banco de dados não disponível.' });
-                return;
-            }
-
-            try {
-                const batch = writeBatch(firestore);
-                
-                const userConnRef = doc(collection(firestore, 'users', userId, 'user_connection'));
-                const userConnData = { token: token.trim() };
-                batch.set(userConnRef, userConnData);
-
-                const allConnRef = doc(collection(firestore, 'all_user_connections'));
-                const allConnData = { token: token.trim(), userId: userId };
-                batch.set(allConnRef, allConnData);
-                
-                await batch.commit();
-
-                toast({
-                    title: 'Sucesso!',
-                    description: 'Sua chave de conexão foi definida.',
-                });
-                // The component will unmount automatically as the parent re-renders.
-            } catch (e: any) {
-                console.error("Error saving token:", e);
-                setError('Ocorreu um erro ao salvar a chave. Tente novamente.');
-                // Here we can also emit a contextual error if this fails due to rules
-                errorEmitter.emit('permission-error', new FirestorePermissionError({
-                    path: `users/${userId}/user_connection`,
-                    operation: 'create',
-                    requestResourceData: { token: token.trim() }
-                }));
-            }
-        });
-    };
-
-    return (
-        <div className="fixed inset-0 z-[100] bg-background/80 backdrop-blur-sm">
-            <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-                <Card className="w-full max-w-md">
-                    <CardHeader>
-                        <CardTitle>Definir Chave de Conexão</CardTitle>
-                        <CardDescription>
-                            Para usar o sistema, você precisa definir uma chave de conexão única.
-                            Esta chave será usada para autenticar todas as suas solicitações de webhook.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="connection-token">Chave de Conexão</Label>
-                            <Input
-                                id="connection-token"
-                                placeholder="Crie uma chave segura..."
-                                value={token}
-                                onChange={(e) => setToken(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleSaveToken()}
-                                disabled={isPending}
-                            />
-                            {error && <p className="text-sm text-destructive">{error}</p>}
-                        </div>
-                    </CardContent>
-                    <CardFooter>
-                        <Button onClick={handleSaveToken} disabled={isPending} className="w-full">
-                            {isPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
-                            Salvar e Acessar o Sistema
-                        </Button>
-                    </CardFooter>
-                </Card>
-            </div>
-        </div>
-    );
 };
 
 const DashboardPage = ({ clients, rawClients }: { clients: Client[], rawClients: Client[] }) => {
@@ -2242,7 +2169,7 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
 };
 
 
-const SettingsPage = ({ subscriptions, allClients, connection, allConnections }: { subscriptions: Subscription[], allClients: Client[], connection: UserConnection | undefined, allConnections: AllUserConnections[] }) => {
+const SettingsPage = ({ subscriptions, allClients }: { subscriptions: Subscription[], allClients: Client[] }) => {
     const [newSubscriptionName, setNewSubscriptionName] = useState('');
     const [newSubscriptionPrice, setNewSubscriptionPrice] = useState('');
     const [editingSubscription, setEditingSubscription] = useState<Subscription | null>(null);
@@ -2255,73 +2182,7 @@ const SettingsPage = ({ subscriptions, allClients, connection, allConnections }:
     const [isPending, startTransition] = useTransition();
     const [confirmationText, setConfirmationText] = useState('');
     const subsFileInputRef = useRef<HTMLInputElement>(null);
-    const [token, setToken] = useState(connection?.token || '');
-    const [tokenError, setTokenError] = useState('');
-
-
-    useEffect(() => {
-        setToken(connection?.token || '');
-    }, [connection]);
-
-    const handleSaveToken = () => {
-        setTokenError('');
-        if (!token.trim()) {
-            setTokenError('O token não pode estar em branco.');
-            return;
-        }
-
-        const isTokenInUse = allConnections.some(conn => conn.token === token.trim() && conn.userId !== userId);
-        if (isTokenInUse) {
-            setTokenError('Essa chave já está em uso. Por favor, escolha outra.');
-            return;
-        }
-
-
-        startTransition(async () => {
-            if (!firestore || !userId) {
-                toast({ variant: 'destructive', title: 'Erro', description: 'Usuário ou banco de dados não disponível.' });
-                return;
-            }
     
-            const userConnQuery = query(collection(firestore, 'users', userId, 'user_connection'));
-            const allConnQuery = query(collection(firestore, 'all_user_connections'), where('userId', '==', userId));
-
-            try {
-                const [userConnSnapshot, allConnSnapshot] = await Promise.all([getDocs(userConnQuery), getDocs(allConnQuery)]);
-                const batch = writeBatch(firestore);
-                
-                // Update or create in user's subcollection
-                if (!userConnSnapshot.empty) {
-                    const docRef = userConnSnapshot.docs[0].ref;
-                    batch.update(docRef, { token: token.trim() });
-                } else {
-                    const docRef = doc(collection(firestore, 'users', userId, 'user_connection'));
-                    batch.set(docRef, { token: token.trim() });
-                }
-
-                // Update or create in global collection
-                if (!allConnSnapshot.empty) {
-                    const docRef = allConnSnapshot.docs[0].ref;
-                    batch.update(docRef, { token: token.trim() });
-                } else {
-                    const docRef = doc(collection(firestore, 'all_user_connections'));
-                    batch.set(docRef, { token: token.trim(), userId });
-                }
-                
-                await batch.commit();
-
-                toast({
-                    title: 'Sucesso!',
-                    description: 'Chave de conexão salva.',
-                });
-            } catch (e) {
-                console.error("Error saving token:", e);
-                setTokenError('Ocorreu um erro ao salvar a chave. Tente novamente.');
-            }
-        });
-    };
-
-
     const handleAddSubscription = () => {
       if (newSubscriptionName.trim() && newSubscriptionPrice && firestore && userId) {
         const newSubscription = {
@@ -2508,31 +2369,6 @@ const SettingsPage = ({ subscriptions, allClients, connection, allConnections }:
                 <h2 className="text-2xl font-bold">Planos e Assinaturas</h2>
                 <p className="text-muted-foreground">Gerencie seus planos e outras configurações.</p>
             </div>
-
-            <Card>
-                <CardHeader>
-                    <CardTitle>Chave de Conexão</CardTitle>
-                    <CardDescription>
-                        Esta chave será enviada em todas as requisições de webhook para autenticação.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                        <div className="flex-grow space-y-1">
-                            <Input
-                                placeholder="Insira sua chave de conexão aqui..."
-                                value={token}
-                                onChange={(e) => setToken(e.target.value)}
-                            />
-                            {tokenError && <p className="text-sm text-destructive">{tokenError}</p>}
-                        </div>
-                        <Button onClick={handleSaveToken} disabled={isPending} className="w-full sm:w-auto">
-                            {isPending ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} 
-                            Salvar Chave
-                        </Button>
-                    </div>
-                </CardContent>
-            </Card>
 
             <Card>
                 <CardHeader>
@@ -3142,11 +2978,16 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
     const [reminderIsEnabled, setReminderIsEnabled] = useState(config?.reminderIsEnabled ?? false);
     const [reminderMessage, setReminderMessage] = useState(config?.reminderMessage ?? 'Olá {cliente}! Lembrete: sua assinatura vence em 3 dias, no dia {vencimento}.');
   
+    const [supportStartMessage, setSupportStartMessage] = useState(config?.supportStartMessage ?? 'Olá {cliente}! Seu suporte foi iniciado. Nossa equipe tem um prazo de até 24h para realizar o atendimento.');
+    const [supportEndMessage, setSupportEndMessage] = useState(config?.supportEndMessage ?? 'Olá {cliente}! Seu suporte foi concluído. Se precisar de mais alguma coisa, é só contatar.');
+
     useEffect(() => {
-      setIsEnabled(config?.isEnabled ?? false);
-      setMessage(config?.message ?? 'Olá {cliente}! Sua assinatura venceu hoje. Para renovar, acesse nosso site.');
-      setReminderIsEnabled(config?.reminderIsEnabled ?? false);
-      setReminderMessage(config?.reminderMessage ?? 'Olá {cliente}! Lembrete: sua assinatura vence em 3 dias, no dia {vencimento}.');
+        setIsEnabled(config?.isEnabled ?? false);
+        setMessage(config?.message ?? 'Olá {cliente}! Sua assinatura venceu hoje. Para renovar, acesse nosso site.');
+        setReminderIsEnabled(config?.reminderIsEnabled ?? false);
+        setReminderMessage(config?.reminderMessage ?? 'Olá {cliente}! Lembrete: sua assinatura vence em 3 dias, no dia {vencimento}.');
+        setSupportStartMessage(config?.supportStartMessage ?? 'Olá {cliente}! Seu suporte foi iniciado. Nossa equipe tem um prazo de até 24h para realizar o atendimento.');
+        setSupportEndMessage(config?.supportEndMessage ?? 'Olá {cliente}! Seu suporte foi concluído. Se precisar de mais alguma coisa, é só contatar.');
     }, [config]);
   
     const handleSaveAutomation = () => {
@@ -3162,6 +3003,8 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
             message,
             reminderIsEnabled,
             reminderMessage,
+            supportStartMessage,
+            supportEndMessage,
         };
 
         if (config?.id) {
@@ -3201,9 +3044,10 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
             </div>
 
             <Tabs defaultValue="due-date" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
+                <TabsList className="grid w-full grid-cols-3">
                     <TabsTrigger value="due-date">Mensagem de Vencimento</TabsTrigger>
                     <TabsTrigger value="reminder">Lembrete (3 dias antes)</TabsTrigger>
+                    <TabsTrigger value="support">Suporte</TabsTrigger>
                 </TabsList>
                 
                 <TabsContent value="due-date">
@@ -3289,6 +3133,42 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
                                         ))}
                                     </div>
                                 </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                <TabsContent value="support">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Configuração das Mensagens de Suporte</CardTitle>
+                            <CardDescription>
+                                Estas mensagens serão enviadas ao marcar ou concluir um suporte.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                            <div className="grid gap-2">
+                                <Label htmlFor="support-start-message">Mensagem de Início de Suporte</Label>
+                                <Textarea
+                                    id="support-start-message"
+                                    placeholder="Digite sua mensagem de início de suporte..."
+                                    value={supportStartMessage}
+                                    onChange={(e) => setSupportStartMessage(e.target.value)}
+                                    className="min-h-[120px]"
+                                />
+                            </div>
+                             <div className="grid gap-2">
+                                <Label htmlFor="support-end-message">Mensagem de Conclusão de Suporte</Label>
+                                <Textarea
+                                    id="support-end-message"
+                                    placeholder="Digite sua mensagem de conclusão de suporte..."
+                                    value={supportEndMessage}
+                                    onChange={(e) => setSupportEndMessage(e.target.value)}
+                                    className="min-h-[120px]"
+                                />
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                                <p>Variável disponível: <code className="bg-muted px-1.5 py-0.5 rounded-sm text-xs">{'{cliente}'}</code></p>
                             </div>
                         </CardContent>
                     </Card>
@@ -3466,17 +3346,16 @@ const SendMessageDialog = ({ client, trigger, useGroupWebhook, userToken }: { cl
     );
 };
 
-const SupportPage = ({ clients, onToggleSupport, setSupportClient, userToken }: { clients: Client[], onToggleSupport: (client: Client) => void, setSupportClient: (client: Client | null) => void, userToken: UserConnection | undefined }) => {
+const SupportPage = ({ clients, onToggleSupport, setSupportClient, userToken, automationSettings, sendAutomationMessage }: { clients: Client[], onToggleSupport: (client: Client) => void, setSupportClient: (client: Client | null) => void, userToken: UserConnection | undefined, automationSettings: AutomationConfig | undefined, sendAutomationMessage: (client: Client, message: string, type: 'support-start' | 'support-end') => void }) => {
     const supportClients = useMemo(() => {
         return clients.filter(c => c.isSupport);
     }, [clients]);
 
     const handleMarkAsResolved = (client: Client) => {
-        if (client.isResale || client.isPackage) {
-            setSupportClient(client);
-        } else {
-            onToggleSupport(client);
+        if (automationSettings?.supportEndMessage) {
+            sendAutomationMessage(client, automationSettings.supportEndMessage, 'support-end');
         }
+        onToggleSupport(client); 
     };
 
     return (
