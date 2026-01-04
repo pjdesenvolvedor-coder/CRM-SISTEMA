@@ -64,7 +64,7 @@ import { Checkbox } from './ui/checkbox';
 import { ScrollArea } from './ui/scroll-area';
 import { Separator } from './ui/separator';
 import { Badge } from './ui/badge';
-import { useFirestore, useCollection, addDoc, updateDoc, deleteDoc, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
+import { useFirestore, useCollection, addDoc, updateDoc, deleteDoc, useMemoFirebase, errorEmitter, FirestorePermissionError, setDoc } from '@/firebase';
 import { collection, Timestamp, doc, writeBatch, query, orderBy, getDocs, where } from 'firebase/firestore';
 import { Switch } from './ui/switch';
 import {
