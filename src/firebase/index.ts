@@ -11,6 +11,7 @@ import {
   updateDoc,
   deleteDoc,
 } from 'firebase/firestore';
+import 'uuid';
 
 
 // IMPORTANT: DO NOT MODIFY THIS FUNCTION

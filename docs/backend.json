@@ -39,9 +39,10 @@
       "type": "object",
       "description": "Represents a user's unique connection token.",
       "properties": {
-        "token": { "type": "string", "description": "The unique connection token for the user." }
+        "token": { "type": "string", "description": "The unique connection token for the user." },
+        "userId": { "type": "string", "description": "The ID of the user who owns the token." }
       },
-      "required": ["token"]
+      "required": ["token", "userId"]
     },
     "Subscription": {
       "title": "Subscription",
@@ -154,6 +155,14 @@
     "/users/{userId}/adCampaigns/{campaignId}": {
         "schema": { "$ref": "#/entities/AdCampaign" },
         "description": "Stores all ad campaign performance data for a specific user."
+    },
+    "/users/{userId}/user_connection/{connectionId}": {
+      "schema": { "$ref": "#/entities/UserConnection" },
+      "description": "Stores the user's unique connection token."
+    },
+    "/all_user_connections/{docId}": {
+      "schema": { "$ref": "#/entities/UserConnection" },
+      "description": "A global collection to ensure token uniqueness across all users."
     }
   }
 }
