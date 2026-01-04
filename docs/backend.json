@@ -159,10 +159,6 @@
     "/users/{userId}/user_connection/{connectionId}": {
       "schema": { "$ref": "#/entities/UserConnection" },
       "description": "Stores the user's unique connection token."
-    },
-    "/all_user_connections/{docId}": {
-      "schema": { "$ref": "#/entities/UserConnection" },
-      "description": "A global collection to ensure token uniqueness across all users."
     }
   }
 }

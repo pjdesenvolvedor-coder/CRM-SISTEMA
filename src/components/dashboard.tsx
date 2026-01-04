@@ -159,8 +159,6 @@ export type UserConnection = {
     userId: string;
 };
 
-type AllUserConnections = UserConnection;
-
 // Types for mail.tm - Moved to AppDashboard state
 type TempMessage = {
     id: string;
@@ -243,9 +241,6 @@ const AppDashboard = () => {
         savedAccounts: [],
     });
     // --- End Temp Email State ---
-
-    const allUserConnectionsQuery = useMemoFirebase(() => firestore ? collection(firestore, 'all_user_connections') : null, [firestore]);
-    const { data: allUserConnections, isLoading: allUserConnectionsLoading } = useCollection<AllUserConnections>(allUserConnectionsQuery);
 
     const userConnectionQuery = useMemoFirebase(() => (firestore && userId) ? collection(firestore, 'users', userId, 'user_connection') : null, [firestore, userId]);
     const { data: userConnection, isLoading: userConnectionLoading } = useCollection<UserConnection>(userConnectionQuery);
@@ -676,7 +671,7 @@ const AppDashboard = () => {
              case '/automacao/disparo':
                 return <MassShootingPage clients={transformedClients} subscriptions={subscriptions ?? []} userToken={userToken} />;
             case '/configuracoes':
-                return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} allUserConnections={allUserConnections ?? []} userConnection={userToken} />;
+                return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} userConnection={userToken} />;
             case '/email-temp':
                 return <TempEmailPage tempEmailState={tempEmailState} setTempEmailState={setTempEmailState} />;
             default:
@@ -684,7 +679,7 @@ const AppDashboard = () => {
         }
     };
     
-    const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading || adCampaignsLoading || userConnectionLoading || allUserConnectionsLoading;
+    const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading || adCampaignsLoading || userConnectionLoading;
 
     if (isLoading) {
         return (
@@ -2169,7 +2164,7 @@ const AddEditClientDialog = ({ isOpen, onOpenChange, clientToEdit, onSave, subsc
 };
 
 
-const SettingsPage = ({ subscriptions, allClients, allUserConnections, userConnection }: { subscriptions: Subscription[], allClients: Client[], allUserConnections: AllUserConnections[], userConnection: UserConnection | undefined }) => {
+const SettingsPage = ({ subscriptions, allClients, userConnection }: { subscriptions: Subscription[], allClients: Client[], userConnection: UserConnection | undefined }) => {
     const [newSubscriptionName, setNewSubscriptionName] = useState('');
     const [newSubscriptionPrice, setNewSubscriptionPrice] = useState('');
     const [editingSubscription, setEditingSubscription] = useState<Subscription | null>(null);
@@ -2210,33 +2205,15 @@ const SettingsPage = ({ subscriptions, allClients, allUserConnections, userConne
         setError('');
 
         try {
-            // Check for uniqueness
-            const tokenExists = allUserConnections.some(conn => conn.token === token.trim() && conn.userId !== userId);
-
-            if (tokenExists) {
-                setError('Esta chave de conexão já está em uso. Por favor, escolha outra.');
-                setIsTokenPending(false);
-                return;
-            }
-
-            const batch = writeBatch(firestore);
-            
-            // Reference to the user's specific connection document
-            const userConnectionDocRef = userConnection ? doc(firestore, 'users', userId, 'user_connection', userConnection.id) : doc(collection(firestore, 'users', userId, 'user_connection'));
-            
-            // Reference to the document in the global uniqueness-checking collection
-            const allConnectionsDocId = userConnection ? userConnection.id : userConnectionDocRef.id;
-            const allConnectionsDocRef = doc(firestore, 'all_user_connections', allConnectionsDocId);
+            const userConnectionColRef = collection(firestore, 'users', userId, 'user_connection');
+            const docRef = userConnection ? doc(userConnectionColRef, userConnection.id) : doc(userConnectionColRef);
             
             const dataToSave: Omit<UserConnection, 'id'> = {
                 token: token.trim(),
                 userId: userId,
             };
 
-            batch.set(userConnectionDocRef, dataToSave, { merge: true });
-            batch.set(allConnectionsDocRef, dataToSave, { merge: true });
-            
-            await batch.commit();
+            await setDoc(docRef, dataToSave, { merge: true });
 
             toast({ title: 'Sucesso!', description: 'Chave de conexão salva.' });
         } catch (e) {
