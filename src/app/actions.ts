@@ -1,3 +1,4 @@
+
 "use server";
 
 const CONNECT_URL = "https://n8nbeta.typeflow.app.br/webhook/aeb30639-baf0-4862-9f5f-a3cc468ab7c5";
@@ -7,7 +8,6 @@ const SEND_MESSAGE_URL = "https://n8nbeta.typeflow.app.br/webhook/235c79d0-71ed-
 const GROUP_WEBHOOK_URL = "https://n8nbeta.typeflow.app.br/webhook/9c5d6ca0-8469-48f3-9a40-115f4d712362";
 const SEND_SCHEDULED_GROUP_MESSAGE_WITH_IMAGE_URL = "https://n8nbeta.typeflow.app.br/webhook/6b70ac73-9025-4ace-b7c9-24db23376c4c";
 
-
 async function postRequest(url: string, body: any = {}, token?: string) {
   try {
     let requestBody = { ...body };
@@ -15,6 +15,9 @@ async function postRequest(url: string, body: any = {}, token?: string) {
     // Send token in ALL requests, without exception.
     if (token) {
         requestBody.chave = token;
+    } else {
+        // Fallback to a default key if no dynamic token is provided
+        requestBody.chave = 'f1f293b4-b4a1-4354-9a37-33d3e6e879f3';
     }
 
     const response = await fetch(url, {
@@ -29,8 +32,11 @@ async function postRequest(url: string, body: any = {}, token?: string) {
       console.error("Error 429: Too Many Requests.", { url, responseStatus: response.status });
       throw new Error("Muitas tentativas. Por favor, aguarde um minuto e tente novamente.");
     }
-    
-    const jsonResponse = await response.json();
+
+    // Check if the response has content before trying to parse it
+    const textResponse = await response.text();
+    const jsonResponse = textResponse ? JSON.parse(textResponse) : { status: 'success', message: 'Request processed without a JSON response body.' };
+
     console.log(`Response from ${url}:`, jsonResponse);
     
     if (!response.ok) {
@@ -47,6 +53,10 @@ async function postRequest(url: string, body: any = {}, token?: string) {
   } catch (error) {
     console.error(`Request failed for URL: ${url}`, error);
     if (error instanceof Error) {
+        // Re-throw SyntaxError with a more descriptive message
+        if (error.name === 'SyntaxError') {
+            throw new Error('Failed to parse server response. The webhook may have returned invalid JSON.');
+        }
         throw new Error(error.message);
     }
     throw new Error("An unknown error occurred");
