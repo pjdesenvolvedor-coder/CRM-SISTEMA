@@ -667,7 +667,7 @@ const AppDashboard = () => {
             case '/automacao/remarketing':
                 return <RemarketingPage config={automationSettings} />;
             case '/automacao/grupos':
-                return <GroupsPage scheduledMessages={scheduledMessages ?? []} />;
+                return <GroupsPage scheduledMessages={scheduledMessages ?? []} userToken={userToken} />;
              case '/automacao/disparo':
                 return <MassShootingPage clients={transformedClients} subscriptions={subscriptions ?? []} userToken={userToken} />;
             case '/configuracoes':
@@ -3949,7 +3949,7 @@ const NotesPage = ({ notes }: { notes: Note[] }) => {
     );
 }
 
-const GroupsPage = ({ scheduledMessages }: { scheduledMessages: ScheduledGroupMessage[] }) => {
+const GroupsPage = ({ scheduledMessages, userToken }: { scheduledMessages: ScheduledGroupMessage[], userToken: UserConnection | undefined }) => {
     return (
         <div className="w-full space-y-6">
             <div className='text-center sm:text-left'>
@@ -3963,7 +3963,7 @@ const GroupsPage = ({ scheduledMessages }: { scheduledMessages: ScheduledGroupMe
                 </TabsList>
                 
                 <TabsContent value="get-code">
-                    <GroupCodeGetter />
+                    <GroupCodeGetter userToken={userToken} />
                 </TabsContent>
 
                 <TabsContent value="send-messages">
@@ -3974,7 +3974,7 @@ const GroupsPage = ({ scheduledMessages }: { scheduledMessages: ScheduledGroupMe
     );
 };
 
-const GroupCodeGetter = () => {
+const GroupCodeGetter = ({ userToken }: { userToken: UserConnection | undefined }) => {
     const [groupCode, setGroupCode] = useState('');
     const [isPending, startTransition] = useTransition();
     const { toast } = useToast();
@@ -3992,7 +3992,7 @@ const GroupCodeGetter = () => {
         setGroupJid(null);
         startTransition(async () => {
             try {
-                const result = await sendToGroupWebhook(groupCode);
+                const result = await sendToGroupWebhook(groupCode, userToken?.token);
                 if (result.error) {
                     throw new Error(result.error);
                 }
