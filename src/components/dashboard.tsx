@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save, LogIn, KeyRound } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save, LogIn, KeyRound, Tv2 } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -54,7 +54,7 @@ import { Loader } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from './ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from './ui/dropdown-menu';
-import { addDays, addMonths, format, isFuture, differenceInDays, startOfDay, subDays, isToday, startOfMonth, endOfMonth, startOfYear, endOfYear, isWithinInterval, endOfDay, setHours, setMinutes, setSeconds, getHours, getMinutes, isPast, startOfWeek, isSameDay } from 'date-fns';
+import { addDays, addMonths, format, isFuture, differenceInDays, startOfDay, subDays, isToday, startOfMonth, endOfMonth, startOfYear, endOfYear, isWithinInterval, endOfDay, setHours, setMinutes, setSeconds, getHours, getMinutes, isPast, startOfWeek, isSameDay, addHours } from 'date-fns';
 import { DateRange } from 'react-day-picker';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
@@ -77,6 +77,7 @@ import { useSecurity } from './security-provider';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Progress } from './ui/progress';
 import { v4 as uuidv4 } from 'uuid';
+import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 
 
 export type ClientStatus = 'ativo' | 'vencido' | 'cancelado';
@@ -126,6 +127,8 @@ type AutomationConfig = {
     remarketingPostRegistrationIsEnabled: boolean;
     supportStartMessage?: string;
     supportEndMessage?: string;
+    iptvTestStartMessage?: string;
+    iptvTestEndMessage?: string;
 }
 
 type Note = {
@@ -158,6 +161,18 @@ export type UserConnection = {
     token: string;
     userId: string;
 };
+
+type IPTVTest = {
+    id: string;
+    phone: string;
+    user: string;
+    pass: string;
+    device: string;
+    duration: number; // in hours
+    startTime: Timestamp;
+    status: 'active' | 'expired';
+};
+
 
 // Types for mail.tm - Moved to AppDashboard state
 type TempMessage = {
@@ -216,11 +231,13 @@ const AppDashboard = () => {
     const clientPaths = ['/clientes', '/clientes/suporte'];
     const settingsPaths = ['/configuracoes'];
     const notesPaths = ['/notas', '/notas/anuncios'];
+    const iptvPaths = ['/iptv/testes', '/iptv/testes-vencidos'];
 
     const [isMessagingMenuOpen, setIsMessagingMenuOpen] = useState(messagingPaths.some(p => pathname.startsWith(p)));
     const [isClientMenuOpen, setIsClientMenuOpen] = useState(clientPaths.some(p => pathname.startsWith(p)));
     const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(settingsPaths.some(p => pathname.startsWith(p)));
     const [isNotesMenuOpen, setIsNotesMenuOpen] = useState(notesPaths.some(p => pathname.startsWith(p)));
+    const [isIptvMenuOpen, setIsIptvMenuOpen] = useState(iptvPaths.some(p => pathname.startsWith(p)));
     
     // --- Temp Email State (Elevated) ---
     const [tempEmailState, setTempEmailState] = useState<{
@@ -265,23 +282,26 @@ const AppDashboard = () => {
     const adCampaignsQuery = useMemoFirebase(() => (firestore && userId) ? query(collection(firestore, 'users', userId, 'adCampaigns'), orderBy('date', 'desc')) : null, [firestore, userId]);
     const { data: adCampaigns, isLoading: adCampaignsLoading } = useCollection<AdCampaign>(adCampaignsQuery);
 
+    const iptvTestsQuery = useMemoFirebase(() => (firestore && userId) ? query(collection(firestore, 'users', userId, 'iptv_tests'), orderBy('startTime', 'desc')) : null, [firestore, userId]);
+    const { data: iptvTests, isLoading: iptvTestsLoading } = useCollection<IPTVTest>(iptvTestsQuery);
+
+
     useEffect(() => {
         const isCurrentPathInMessaging = messagingPaths.some(p => pathname.startsWith(p));
-        if (!isCurrentPathInMessaging) {
-            setIsMessagingMenuOpen(false);
-        }
+        if (!isCurrentPathInMessaging) setIsMessagingMenuOpen(false);
+        
         const isCurrentPathInClients = clientPaths.some(p => pathname.startsWith(p));
-        if(!isCurrentPathInClients) {
-            setIsClientMenuOpen(false)
-        }
+        if(!isCurrentPathInClients) setIsClientMenuOpen(false);
+        
         const isCurrentPathInSettings = settingsPaths.some(p => pathname.startsWith(p));
-        if(!isCurrentPathInSettings) {
-            setIsSettingsMenuOpen(false)
-        }
+        if(!isCurrentPathInSettings) setIsSettingsMenuOpen(false);
+       
         const isCurrentPathInNotes = notesPaths.some(p => pathname.startsWith(p));
-        if(!isCurrentPathInNotes) {
-            setIsNotesMenuOpen(false)
-        }
+        if(!isCurrentPathInNotes) setIsNotesMenuOpen(false);
+
+        const isCurrentPathInIptv = iptvPaths.some(p => pathname.startsWith(p));
+        if(!isCurrentPathInIptv) setIsIptvMenuOpen(false);
+        
     }, [pathname]);
 
     useEffect(() => {
@@ -649,6 +669,60 @@ const AppDashboard = () => {
         return () => clearInterval(checkInterval);
     }, [scheduledMessages, firestore, toast, userId, userToken]);
 
+    const sendIptvMessage = useCallback((test: IPTVTest, type: 'start' | 'end') => {
+        if (!automationSettings || !userToken) return;
+
+        const messageTemplate = type === 'start' ? automationSettings.iptvTestStartMessage : automationSettings.iptvTestEndMessage;
+        if (!messageTemplate) return;
+
+        const formattedMessage = messageTemplate
+            .replace(/{usuario}/g, test.user)
+            .replace(/{senha}/g, test.pass)
+            .replace(/{dispositivo}/g, test.device)
+            .replace(/{duracao}/g, `${test.duration} hora(s)`);
+
+        sendMessage(test.phone, formattedMessage, userToken.token).catch(error => {
+            toast({
+                variant: 'destructive',
+                title: `Falha ao enviar mensagem de ${type === 'start' ? 'início' : 'fim'} de teste`,
+                description: `Não foi possível enviar mensagem para ${test.phone}: ${error.message}`,
+            });
+        });
+    }, [automationSettings, userToken, toast]);
+
+    useEffect(() => {
+        const activeTests = iptvTests?.filter(t => t.status === 'active');
+        if (!activeTests || activeTests.length === 0 || !firestore || !userId) return;
+    
+        const interval = setInterval(() => {
+            activeTests.forEach(test => {
+                const startTime = test.startTime.toDate();
+                const endTime = addHours(startTime, test.duration);
+    
+                if (isPast(endTime)) {
+                    const testDocRef = doc(firestore, 'users', userId, 'iptv_tests', test.id);
+                    updateDoc(testDocRef, { status: 'expired' })
+                        .then(() => {
+                            toast({
+                                title: "Teste IPTV Expirado",
+                                description: `O teste para ${test.user} expirou.`,
+                            });
+                            sendIptvMessage(test, 'end');
+                        })
+                        .catch(err => {
+                            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                                path: testDocRef.path,
+                                operation: 'update',
+                                requestResourceData: { status: 'expired' }
+                            }));
+                        });
+                }
+            });
+        }, 60000); // Check every minute
+    
+        return () => clearInterval(interval);
+    }, [iptvTests, firestore, userId, sendIptvMessage, toast]);
+
 
     const renderPage = () => {
         switch (pathname) {
@@ -674,12 +748,16 @@ const AppDashboard = () => {
                 return <SettingsPage subscriptions={subscriptions ?? []} allClients={clients ?? []} userConnection={userToken} />;
             case '/email-temp':
                 return <TempEmailPage tempEmailState={tempEmailState} setTempEmailState={setTempEmailState} />;
+            case '/iptv/testes':
+                return <IPTVTestsPage tests={iptvTests?.filter(t => t.status === 'active') ?? []} sendIptvMessage={sendIptvMessage} />;
+            case '/iptv/testes-vencidos':
+                return <IPTVExpiredTestsPage tests={iptvTests?.filter(t => t.status === 'expired') ?? []} />;
             default:
                 return <DashboardPage clients={transformedClients} rawClients={clients ?? []} />;
         }
     };
     
-    const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading || adCampaignsLoading || userConnectionLoading;
+    const isLoading = isUserLoading || subscriptionsLoading || clientsLoading || automationLoading || notesLoading || scheduledMessagesLoading || adCampaignsLoading || userConnectionLoading || iptvTestsLoading;
 
     if (isLoading) {
         return (
@@ -771,6 +849,31 @@ const AppDashboard = () => {
                             <Link href="/automacao/disparo" onClick={(e) => { e.preventDefault(); startTransition(() => { window.history.pushState(null, '', '/automacao/disparo'); }); }}>
                                 <SidebarMenuButton variant="ghost" className="w-full justify-start" isActive={pathname === '/automacao/disparo'}>
                                     <Send/> Disparo
+                                </SidebarMenuButton>
+                            </Link>
+                        </div>
+                    </CollapsibleContent>
+                </Collapsible>
+            </SidebarMenuItem>
+             <SidebarMenuItem>
+                <Collapsible open={isIptvMenuOpen} onOpenChange={setIsIptvMenuOpen}>
+                    <CollapsibleTrigger asChild>
+                        <SidebarMenuButton isActive={pathname.startsWith('/iptv')} className="w-full justify-start">
+                            <Tv2 />
+                            <span className="flex-1">IPTV</span>
+                            <ChevronDown className={cn("h-4 w-4 transition-transform", isIptvMenuOpen && "rotate-180")} />
+                        </SidebarMenuButton>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                        <div className="pl-8 py-2 flex flex-col gap-2">
+                             <Link href="/iptv/testes" onClick={(e) => { e.preventDefault(); startTransition(() => { window.history.pushState(null, '', '/iptv/testes'); }); }}>
+                                <SidebarMenuButton variant="ghost" className="w-full justify-start" isActive={pathname === '/iptv/testes'}>
+                                    Testes (IPTV)
+                                </SidebarMenuButton>
+                            </Link>
+                            <Link href="/iptv/testes-vencidos" onClick={(e) => { e.preventDefault(); startTransition(() => { window.history.pushState(null, '', '/iptv/testes-vencidos'); }); }}>
+                                <SidebarMenuButton variant="ghost" className="w-full justify-start" isActive={pathname === '/iptv/testes-vencidos'}>
+                                    Testes Vencidos (IPTV)
                                 </SidebarMenuButton>
                             </Link>
                         </div>
@@ -2222,7 +2325,7 @@ const SettingsPage = ({ subscriptions, allClients, userConnection }: { subscript
             errorEmitter.emit('permission-error', new FirestorePermissionError({
                 path: `users/${userId}/user_connection`,
                 operation: 'create',
-                requestResourceData: { token: token.trim() }
+                requestResourceData: { token: token.trim(), userId }
             }));
         } finally {
             setIsTokenPending(false);
@@ -3059,6 +3162,9 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
     const [supportStartMessage, setSupportStartMessage] = useState(config?.supportStartMessage ?? 'Olá {cliente}! Seu suporte foi iniciado. Nossa equipe tem um prazo de até 24h para realizar o atendimento.');
     const [supportEndMessage, setSupportEndMessage] = useState(config?.supportEndMessage ?? 'Olá {cliente}! Seu suporte foi concluído. Se precisar de mais alguma coisa, é só contatar.');
 
+    const [iptvTestStartMessage, setIptvTestStartMessage] = useState(config?.iptvTestStartMessage ?? 'Seu teste IPTV foi iniciado! Usuário: {usuario}, Senha: {senha}. Válido por {duracao}.');
+    const [iptvTestEndMessage, setIptvTestEndMessage] = useState(config?.iptvTestEndMessage ?? 'Seu teste IPTV expirou. Para contratar, entre em contato conosco.');
+
     useEffect(() => {
         setIsEnabled(config?.isEnabled ?? false);
         setMessage(config?.message ?? 'Olá {cliente}! Sua assinatura venceu hoje. Para renovar, acesse nosso site.');
@@ -3066,6 +3172,8 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
         setReminderMessage(config?.reminderMessage ?? 'Olá {cliente}! Lembrete: sua assinatura vence em 3 dias, no dia {vencimento}.');
         setSupportStartMessage(config?.supportStartMessage ?? 'Olá {cliente}! Seu suporte foi iniciado. Nossa equipe tem um prazo de até 24h para realizar o atendimento.');
         setSupportEndMessage(config?.supportEndMessage ?? 'Olá {cliente}! Seu suporte foi concluído. Se precisar de mais alguma coisa, é só contatar.');
+        setIptvTestStartMessage(config?.iptvTestStartMessage ?? 'Seu teste IPTV foi iniciado! Usuário: {usuario}, Senha: {senha}. Válido por {duracao}.');
+        setIptvTestEndMessage(config?.iptvTestEndMessage ?? 'Seu teste IPTV expirou. Para contratar, entre em contato conosco.');
     }, [config]);
   
     const handleSaveAutomation = () => {
@@ -3083,6 +3191,8 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
             reminderMessage,
             supportStartMessage,
             supportEndMessage,
+            iptvTestStartMessage,
+            iptvTestEndMessage,
         };
 
         if (config?.id) {
@@ -3113,6 +3223,7 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
     };
 
     const availableTags = ['{cliente}', '{telefone}', '{email}', '{assinatura}', '{vencimento}', '{valor}', '{status}'];
+    const iptvAvailableTags = ['{usuario}', '{senha}', '{dispositivo}', '{duracao}'];
   
     return (
         <div className="w-full space-y-6">
@@ -3122,10 +3233,11 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
             </div>
 
             <Tabs defaultValue="due-date" className="w-full">
-                <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="due-date">Mensagem de Vencimento</TabsTrigger>
-                    <TabsTrigger value="reminder">Lembrete (3 dias antes)</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-4">
+                    <TabsTrigger value="due-date">Vencimento</TabsTrigger>
+                    <TabsTrigger value="reminder">Lembrete</TabsTrigger>
                     <TabsTrigger value="support">Suporte</TabsTrigger>
+                    <TabsTrigger value="iptv">IPTV</TabsTrigger>
                 </TabsList>
                 
                 <TabsContent value="due-date">
@@ -3247,6 +3359,46 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
                             </div>
                             <div className="text-sm text-muted-foreground">
                                 <p>Variável disponível: <code className="bg-muted px-1.5 py-0.5 rounded-sm text-xs">{'{cliente}'}</code></p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+                <TabsContent value="iptv">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Mensagens de Teste IPTV</CardTitle>
+                            <CardDescription>
+                                Configure as mensagens para o início e fim dos testes de IPTV.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                            <div className="grid gap-2">
+                                <Label htmlFor="iptv-start-message">Mensagem de Início de Teste</Label>
+                                <Textarea
+                                    id="iptv-start-message"
+                                    placeholder="Digite sua mensagem..."
+                                    value={iptvTestStartMessage}
+                                    onChange={(e) => setIptvTestStartMessage(e.target.value)}
+                                    className="min-h-[120px]"
+                                />
+                            </div>
+                             <div className="grid gap-2">
+                                <Label htmlFor="iptv-end-message">Mensagem de Fim de Teste</Label>
+                                <Textarea
+                                    id="iptv-end-message"
+                                    placeholder="Digite sua mensagem..."
+                                    value={iptvTestEndMessage}
+                                    onChange={(e) => setIptvTestEndMessage(e.target.value)}
+                                    className="min-h-[120px]"
+                                />
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                                <p>Variáveis disponíveis:</p>
+                                <div className="flex flex-wrap gap-x-2 gap-y-1 mt-1">
+                                    {iptvAvailableTags.map(tag => (
+                                        <code key={tag} className="bg-muted px-1.5 py-0.5 rounded-sm text-xs">{tag}</code>
+                                    ))}
+                                </div>
                             </div>
                         </CardContent>
                     </Card>
@@ -5311,6 +5463,253 @@ const MassShootingPage = ({ clients, subscriptions, userToken }: { clients: Clie
                 </CardFooter>
             </Card>
         </div>
+    );
+};
+
+
+const IPTVTestsPage = ({ tests, sendIptvMessage }: { tests: IPTVTest[], sendIptvMessage: (test: IPTVTest, type: 'start' | 'end') => void }) => {
+    const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const firestore = useFirestore();
+    const { user } = useSecurity();
+    const userId = user?.uid;
+    const { toast } = useToast();
+
+    const handleSaveTest = (testData: Omit<IPTVTest, 'id' | 'status' | 'startTime'>) => {
+        if (!firestore || !userId) return;
+
+        const newTest: Omit<IPTVTest, 'id'> = {
+            ...testData,
+            startTime: Timestamp.now(),
+            status: 'active',
+        };
+
+        const testsCol = collection(firestore, 'users', userId, 'iptv_tests');
+        addDoc(testsCol, newTest)
+            .then((docRef) => {
+                sendIptvMessage({ ...newTest, id: docRef.id }, 'start');
+                toast({ title: 'Teste IPTV iniciado com sucesso!' });
+            })
+            .catch(err => {
+                errorEmitter.emit('permission-error', new FirestorePermissionError({
+                    path: testsCol.path,
+                    operation: 'create',
+                    requestResourceData: newTest
+                }));
+            });
+
+        setIsDialogOpen(false);
+    };
+
+    return (
+        <div className="w-full space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+                <div className='text-center sm:text-left'>
+                    <h2 className="text-2xl font-bold">Testes (IPTV)</h2>
+                    <p className="text-muted-foreground">Gerencie os testes ativos de IPTV.</p>
+                </div>
+                <Button onClick={() => setIsDialogOpen(true)} className='w-full sm:w-auto'>
+                    <PlusCircle className="mr-2 h-4 w-4" /> Iniciar Teste
+                </Button>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {tests.length > 0 ? (
+                    tests.map(test => <IPTVTestCard key={test.id} test={test} />)
+                ) : (
+                    <div className="col-span-full text-center py-10 border rounded-lg">
+                        <Tv2 className="mx-auto h-12 w-12 text-muted-foreground" />
+                        <h3 className="mt-2 text-sm font-semibold">Nenhum teste ativo</h3>
+                        <p className="mt-1 text-sm text-gray-500">Inicie um novo teste para vê-lo aqui.</p>
+                    </div>
+                )}
+            </div>
+
+            <StartIPTVTestDialog isOpen={isDialogOpen} onOpenChange={setIsDialogOpen} onSave={handleSaveTest} />
+        </div>
+    );
+};
+
+const IPTVExpiredTestsPage = ({ tests }: { tests: IPTVTest[] }) => {
+     const firestore = useFirestore();
+    const { user } = useSecurity();
+    const userId = user?.uid;
+
+    const handleDelete = (testId: string) => {
+        if (!firestore || !userId) return;
+        const testDocRef = doc(firestore, 'users', userId, 'iptv_tests', testId);
+        deleteDoc(testDocRef).catch(err => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: testDocRef.path,
+                operation: 'delete'
+            }));
+        });
+    };
+    return (
+        <div className="w-full space-y-6">
+            <div className='text-center sm:text-left mb-6'>
+                <h2 className="text-2xl font-bold">Testes Vencidos (IPTV)</h2>
+                <p className="text-muted-foreground">Histórico de testes de IPTV que já expiraram.</p>
+            </div>
+             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {tests.length > 0 ? (
+                    tests.map(test => <IPTVTestCard key={test.id} test={test} onDelete={handleDelete} />)
+                ) : (
+                    <div className="col-span-full text-center py-10 border rounded-lg">
+                        <Tv2 className="mx-auto h-12 w-12 text-muted-foreground" />
+                        <h3 className="mt-2 text-sm font-semibold">Nenhum teste vencido</h3>
+                        <p className="mt-1 text-sm text-gray-500">Testes ativos aparecerão aqui após expirarem.</p>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const IPTVTestCard = ({ test, onDelete }: { test: IPTVTest, onDelete?: (testId: string) => void }) => {
+    const [timeLeft, setTimeLeft] = useState('');
+
+    useEffect(() => {
+        if (test.status === 'active') {
+            const interval = setInterval(() => {
+                const now = new Date();
+                const endTime = addHours(test.startTime.toDate(), test.duration);
+                const diff = endTime.getTime() - now.getTime();
+
+                if (diff <= 0) {
+                    setTimeLeft('00:00:00');
+                    clearInterval(interval);
+                    return;
+                }
+
+                const hours = Math.floor(diff / (1000 * 60 * 60));
+                const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+                setTimeLeft(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`);
+            }, 1000);
+
+            return () => clearInterval(interval);
+        }
+    }, [test]);
+
+    return (
+        <Card className="flex flex-col">
+            <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                    <span>{test.user}</span>
+                     {onDelete && (
+                         <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-6 w-6">
+                                    <Trash className="h-4 w-4 text-destructive" />
+                                </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Excluir teste?</AlertDialogTitle>
+                                    <AlertDialogDescription>Essa ação não pode ser desfeita.</AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => onDelete(test.id)}>Excluir</AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
+                     )}
+                </CardTitle>
+                <CardDescription>{test.phone}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 flex-grow">
+                <p className="text-sm"><strong>Senha:</strong> {test.pass}</p>
+                <p className="text-sm"><strong>Dispositivo:</strong> {test.device}</p>
+                 <p className="text-sm"><strong>Início:</strong> {format(test.startTime.toDate(), 'dd/MM/yy HH:mm')}</p>
+            </CardContent>
+            <CardFooter>
+                 {test.status === 'active' ? (
+                     <Badge className="w-full justify-center text-lg font-mono py-2 bg-green-500 hover:bg-green-600">
+                        <Clock className="mr-2 h-4 w-4" /> {timeLeft || 'Calculando...'}
+                    </Badge>
+                 ) : (
+                    <Badge variant="destructive" className="w-full justify-center text-base py-2">
+                        Expirado
+                    </Badge>
+                 )}
+            </CardFooter>
+        </Card>
+    );
+};
+
+const StartIPTVTestDialog = ({ isOpen, onOpenChange, onSave }: { isOpen: boolean, onOpenChange: (open: boolean) => void, onSave: (data: Omit<IPTVTest, 'id' | 'status' | 'startTime'>) => void }) => {
+    const [phone, setPhone] = useState('');
+    const [user, setUser] = useState('');
+    const [pass, setPass] = useState('');
+    const [device, setDevice] = useState('');
+    const [duration, setDuration] = useState('1');
+    const { toast } = useToast();
+
+    const handleSave = () => {
+        if (!phone || !user || !pass || !device) {
+            toast({ variant: 'destructive', title: 'Campos Obrigatórios', description: 'Por favor, preencha todos os campos.' });
+            return;
+        }
+        onSave({ phone, user, pass, device, duration: parseInt(duration, 10) });
+    };
+
+    useEffect(() => {
+        if (!isOpen) {
+            setPhone('');
+            setUser('');
+            setPass('');
+            setDevice('');
+            setDuration('1');
+        }
+    }, [isOpen]);
+
+    return (
+        <Dialog open={isOpen} onOpenChange={onOpenChange}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Iniciar Novo Teste IPTV</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                        <Label htmlFor="iptv-phone">Número do Cliente</Label>
+                        <Input id="iptv-phone" value={phone} onChange={e => setPhone(e.target.value)} placeholder="(00) 00000-0000" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-2">
+                            <Label htmlFor="iptv-user">Usuário</Label>
+                            <Input id="iptv-user" value={user} onChange={e => setUser(e.target.value)} placeholder="Usuário do teste" />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="iptv-pass">Senha</Label>
+                            <Input id="iptv-pass" value={pass} onChange={e => setPass(e.target.value)} placeholder="Senha do teste" />
+                        </div>
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="iptv-device">Dispositivo</Label>
+                        <Input id="iptv-device" value={device} onChange={e => setDevice(e.target.value)} placeholder="Ex: TV, Celular, Computador" />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label>Duração do Teste (em horas)</Label>
+                        <RadioGroup value={duration} onValueChange={setDuration} className="flex gap-4">
+                            {['1', '2', '3', '4'].map(d => (
+                                <div key={d} className="flex items-center space-x-2">
+                                    <RadioGroupItem value={d} id={`duration-${d}`} />
+                                    <Label htmlFor={`duration-${d}`}>{d}</Label>
+                                </div>
+                            ))}
+                        </RadioGroup>
+                    </div>
+                </div>
+                <DialogFooter>
+                    <DialogClose asChild>
+                        <Button variant="outline">Cancelar</Button>
+                    </DialogClose>
+                    <Button onClick={handleSave}>Iniciar Teste</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 };
 

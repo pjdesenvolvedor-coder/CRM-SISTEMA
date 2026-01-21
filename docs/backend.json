@@ -82,7 +82,9 @@
             "remarketingPostRegistrationMessage": { "type": "string", "description": "Message for post-registration remarketing." },
             "remarketingPostRegistrationIsEnabled": { "type": "boolean", "description": "Whether post-registration remarketing is enabled." },
             "supportStartMessage": { "type": "string", "description": "Message sent when a client is marked for support." },
-            "supportEndMessage": { "type": "string", "description": "Message sent when a client's support is resolved." }
+            "supportEndMessage": { "type": "string", "description": "Message sent when a client's support is resolved." },
+            "iptvTestStartMessage": { "type": "string", "description": "Message sent when an IPTV test starts." },
+            "iptvTestEndMessage": { "type": "string", "description": "Message sent when an IPTV test ends." }
         },
         "required": ["isEnabled", "message", "reminderIsEnabled", "reminderMessage"]
     },
@@ -122,6 +124,21 @@
         "conversationsStarted": { "type": "number", "description": "Number of conversations started on that day." }
       },
       "required": ["date", "amountSpent", "amountReturned", "conversationsStarted"]
+    },
+    "IPTVTest": {
+      "title": "IPTVTest",
+      "type": "object",
+      "description": "Represents an IPTV test for a client.",
+      "properties": {
+        "phone": { "type": "string", "description": "Client's phone number." },
+        "user": { "type": "string", "description": "The username for the test." },
+        "pass": { "type": "string", "description": "The password for the test." },
+        "device": { "type": "string", "description": "The device the client is using." },
+        "duration": { "type": "number", "description": "Duration of the test in hours." },
+        "startTime": { "type": "string", "format": "date-time", "description": "Timestamp when the test started." },
+        "status": { "type": "string", "enum": ["active", "expired"], "description": "The status of the test." }
+      },
+      "required": ["phone", "user", "pass", "device", "duration", "startTime", "status"]
     }
   },
   "auth": {
@@ -159,6 +176,10 @@
     "/users/{userId}/user_connection/{connectionId}": {
       "schema": { "$ref": "#/entities/UserConnection" },
       "description": "Stores the user's unique connection token."
+    },
+    "/users/{userId}/iptv_tests/{testId}": {
+      "schema": { "$ref": "#/entities/IPTVTest" },
+      "description": "Stores all IPTV tests for a specific user."
     }
   }
 }
