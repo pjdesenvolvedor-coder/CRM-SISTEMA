@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save, LogIn, KeyRound, Tv2 } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save, LogIn, KeyRound, Tv2, Link as LinkIcon } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -164,10 +164,13 @@ export type UserConnection = {
 
 type IPTVTest = {
     id: string;
+    name: string;
     phone: string;
     user: string;
     pass: string;
     device: string;
+    link?: string;
+    notes?: string;
     duration: number; // in hours
     startTime: Timestamp;
     status: 'active' | 'expired';
@@ -676,10 +679,13 @@ const AppDashboard = () => {
         if (!messageTemplate) return;
 
         const formattedMessage = messageTemplate
+            .replace(/{nome}/g, test.name)
             .replace(/{usuario}/g, test.user)
             .replace(/{senha}/g, test.pass)
             .replace(/{dispositivo}/g, test.device)
-            .replace(/{duracao}/g, `${test.duration} hora(s)`);
+            .replace(/{duracao}/g, `${test.duration} hora(s)`)
+            .replace(/{link}/g, test.link || '')
+            .replace(/{observacao}/g, test.notes || '');
 
         sendMessage(test.phone, formattedMessage, userToken.token).catch(error => {
             toast({
@@ -705,7 +711,7 @@ const AppDashboard = () => {
                         .then(() => {
                             toast({
                                 title: "Teste IPTV Expirado",
-                                description: `O teste para ${test.user} expirou.`,
+                                description: `O teste para ${test.name} expirou.`,
                             });
                             sendIptvMessage(test, 'end');
                         })
@@ -2325,7 +2331,7 @@ const SettingsPage = ({ subscriptions, allClients, userConnection }: { subscript
             errorEmitter.emit('permission-error', new FirestorePermissionError({
                 path: `users/${userId}/user_connection`,
                 operation: 'create',
-                requestResourceData: { token: token.trim(), userId }
+                requestResourceData: { token: token.trim() }
             }));
         } finally {
             setIsTokenPending(false);
@@ -3223,7 +3229,7 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
     };
 
     const availableTags = ['{cliente}', '{telefone}', '{email}', '{assinatura}', '{vencimento}', '{valor}', '{status}'];
-    const iptvAvailableTags = ['{usuario}', '{senha}', '{dispositivo}', '{duracao}'];
+    const iptvAvailableTags = ['{nome}', '{usuario}', '{senha}', '{dispositivo}', '{duracao}', '{link}', '{observacao}'];
   
     return (
         <div className="w-full space-y-6">
@@ -5567,6 +5573,21 @@ const IPTVExpiredTestsPage = ({ tests }: { tests: IPTVTest[] }) => {
 
 const IPTVTestCard = ({ test, onDelete }: { test: IPTVTest, onDelete?: (testId: string) => void }) => {
     const [timeLeft, setTimeLeft] = useState('');
+    const { toast } = useToast();
+
+    const handleCopy = (text: string | undefined, fieldName: string) => {
+        if (!text) return;
+        navigator.clipboard.writeText(text).then(() => {
+            toast({
+                title: `${fieldName} copiado!`,
+            });
+        }).catch(err => {
+            toast({
+                variant: "destructive",
+                title: "Falha ao copiar",
+            });
+        });
+    };
 
     useEffect(() => {
         if (test.status === 'active') {
@@ -5596,7 +5617,7 @@ const IPTVTestCard = ({ test, onDelete }: { test: IPTVTest, onDelete?: (testId: 
         <Card className="flex flex-col">
             <CardHeader>
                 <CardTitle className="flex items-center justify-between">
-                    <span>{test.user}</span>
+                    <span>{test.name}</span>
                      {onDelete && (
                          <AlertDialog>
                             <AlertDialogTrigger asChild>
@@ -5620,11 +5641,24 @@ const IPTVTestCard = ({ test, onDelete }: { test: IPTVTest, onDelete?: (testId: 
                 <CardDescription>{test.phone}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2 flex-grow">
+                <p className="text-sm"><strong>Usuário:</strong> {test.user}</p>
                 <p className="text-sm"><strong>Senha:</strong> {test.pass}</p>
                 <p className="text-sm"><strong>Dispositivo:</strong> {test.device}</p>
-                 <p className="text-sm"><strong>Início:</strong> {format(test.startTime.toDate(), 'dd/MM/yy HH:mm')}</p>
+                {test.link && (
+                    <div className="text-sm flex items-center gap-2">
+                        <strong>Link:</strong> 
+                        <Button variant="link" className="p-0 h-auto truncate" onClick={() => handleCopy(test.link, 'Link')}>
+                           <span className="truncate max-w-[150px]">{test.link}</span>
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => handleCopy(test.link, 'Link')}>
+                            <Copy className="h-3 w-3" />
+                        </Button>
+                    </div>
+                )}
+                 {test.notes && <p className="text-sm pt-2 border-t mt-2"><strong>Observação:</strong> {test.notes}</p>}
             </CardContent>
-            <CardFooter>
+            <CardFooter className="flex-col gap-2">
+                 <p className="text-xs text-muted-foreground w-full"><strong>Início:</strong> {format(test.startTime.toDate(), 'dd/MM/yy HH:mm')}</p>
                  {test.status === 'active' ? (
                      <Badge className="w-full justify-center text-lg font-mono py-2 bg-green-500 hover:bg-green-600">
                         <Clock className="mr-2 h-4 w-4" /> {timeLeft || 'Calculando...'}
@@ -5640,27 +5674,33 @@ const IPTVTestCard = ({ test, onDelete }: { test: IPTVTest, onDelete?: (testId: 
 };
 
 const StartIPTVTestDialog = ({ isOpen, onOpenChange, onSave }: { isOpen: boolean, onOpenChange: (open: boolean) => void, onSave: (data: Omit<IPTVTest, 'id' | 'status' | 'startTime'>) => void }) => {
+    const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
     const [user, setUser] = useState('');
     const [pass, setPass] = useState('');
     const [device, setDevice] = useState('');
+    const [link, setLink] = useState('');
+    const [notes, setNotes] = useState('');
     const [duration, setDuration] = useState('1');
     const { toast } = useToast();
 
     const handleSave = () => {
-        if (!phone || !user || !pass || !device) {
-            toast({ variant: 'destructive', title: 'Campos Obrigatórios', description: 'Por favor, preencha todos os campos.' });
+        if (!name || !phone || !user || !pass || !device) {
+            toast({ variant: 'destructive', title: 'Campos Obrigatórios', description: 'Nome, Telefone, Usuário, Senha e Dispositivo são obrigatórios.' });
             return;
         }
-        onSave({ phone, user, pass, device, duration: parseInt(duration, 10) });
+        onSave({ name, phone, user, pass, device, link, notes, duration: parseInt(duration, 10) });
     };
 
     useEffect(() => {
         if (!isOpen) {
+            setName('');
             setPhone('');
             setUser('');
             setPass('');
             setDevice('');
+            setLink('');
+            setNotes('');
             setDuration('1');
         }
     }, [isOpen]);
@@ -5671,7 +5711,11 @@ const StartIPTVTestDialog = ({ isOpen, onOpenChange, onSave }: { isOpen: boolean
                 <DialogHeader>
                     <DialogTitle>Iniciar Novo Teste IPTV</DialogTitle>
                 </DialogHeader>
-                <div className="grid gap-4 py-4">
+                <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-4">
+                    <div className="grid gap-2">
+                        <Label htmlFor="iptv-name">Nome do Cliente</Label>
+                        <Input id="iptv-name" value={name} onChange={e => setName(e.target.value)} placeholder="Nome do cliente" />
+                    </div>
                     <div className="grid gap-2">
                         <Label htmlFor="iptv-phone">Número do Cliente</Label>
                         <Input id="iptv-phone" value={phone} onChange={e => setPhone(e.target.value)} placeholder="(00) 00000-0000" />
@@ -5689,6 +5733,14 @@ const StartIPTVTestDialog = ({ isOpen, onOpenChange, onSave }: { isOpen: boolean
                     <div className="grid gap-2">
                         <Label htmlFor="iptv-device">Dispositivo</Label>
                         <Input id="iptv-device" value={device} onChange={e => setDevice(e.target.value)} placeholder="Ex: TV, Celular, Computador" />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="iptv-link">Link</Label>
+                        <Input id="iptv-link" value={link} onChange={e => setLink(e.target.value)} placeholder="Link do teste (opcional)" />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="iptv-notes">Observação</Label>
+                        <Textarea id="iptv-notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Observações adicionais (opcional)"/>
                     </div>
                     <div className="grid gap-2">
                         <Label>Duração do Teste (em horas)</Label>

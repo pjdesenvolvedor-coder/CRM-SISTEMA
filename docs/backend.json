@@ -130,15 +130,18 @@
       "type": "object",
       "description": "Represents an IPTV test for a client.",
       "properties": {
+        "name": { "type": "string", "description": "Client's name for the test." },
         "phone": { "type": "string", "description": "Client's phone number." },
         "user": { "type": "string", "description": "The username for the test." },
         "pass": { "type": "string", "description": "The password for the test." },
         "device": { "type": "string", "description": "The device the client is using." },
+        "link": { "type": "string", "description": "The IPTV test link." },
+        "notes": { "type": "string", "description": "Additional notes about the IPTV test." },
         "duration": { "type": "number", "description": "Duration of the test in hours." },
         "startTime": { "type": "string", "format": "date-time", "description": "Timestamp when the test started." },
         "status": { "type": "string", "enum": ["active", "expired"], "description": "The status of the test." }
       },
-      "required": ["phone", "user", "pass", "device", "duration", "startTime", "status"]
+      "required": ["name", "phone", "user", "pass", "device", "duration", "startTime", "status"]
     }
   },
   "auth": {
