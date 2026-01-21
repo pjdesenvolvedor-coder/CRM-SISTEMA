@@ -414,6 +414,14 @@ const AppDashboard = () => {
         return transformedClients.filter(c => c.isSupport).length;
     }, [transformedClients]);
 
+    const activeIptvTestsCount = useMemo(() => {
+        return iptvTests?.filter(t => t.status === 'active').length ?? 0;
+    }, [iptvTests]);
+
+    const expiredIptvTestsCount = useMemo(() => {
+        return iptvTests?.filter(t => t.status === 'expired').length ?? 0;
+    }, [iptvTests]);
+
     const formatMessage = useMemo(() => (message: string, client: Client) => {
         const clientDueDate = client.dueDate ? new Date(client.dueDate as Date) : null;
         return message
@@ -875,11 +883,21 @@ const AppDashboard = () => {
                              <Link href="/iptv/testes" onClick={(e) => { e.preventDefault(); startTransition(() => { window.history.pushState(null, '', '/iptv/testes'); }); }}>
                                 <SidebarMenuButton variant="ghost" className="w-full justify-start" isActive={pathname === '/iptv/testes'}>
                                     Testes (IPTV)
+                                    {activeIptvTestsCount > 0 && (
+                                        <Badge className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full">
+                                            {activeIptvTestsCount}
+                                        </Badge>
+                                    )}
                                 </SidebarMenuButton>
                             </Link>
                             <Link href="/iptv/testes-vencidos" onClick={(e) => { e.preventDefault(); startTransition(() => { window.history.pushState(null, '', '/iptv/testes-vencidos'); }); }}>
                                 <SidebarMenuButton variant="ghost" className="w-full justify-start" isActive={pathname === '/iptv/testes-vencidos'}>
                                     Testes Vencidos (IPTV)
+                                    {expiredIptvTestsCount > 0 && (
+                                        <Badge variant="secondary" className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full">
+                                            {expiredIptvTestsCount}
+                                        </Badge>
+                                    )}
                                 </SidebarMenuButton>
                             </Link>
                         </div>
