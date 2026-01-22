@@ -129,6 +129,9 @@ type AutomationConfig = {
     supportEndMessage?: string;
     iptvTestStartMessage?: string;
     iptvTestEndMessage?: string;
+    iptvFollowUpIsEnabled?: boolean;
+    iptvFollowUpHours?: number;
+    iptvFollowUpMessage?: string;
 }
 
 type Note = {
@@ -174,6 +177,7 @@ type IPTVTest = {
     duration: number; // in hours
     startTime: Timestamp;
     status: 'active' | 'expired';
+    followUpSentAt?: Timestamp | null;
 };
 
 
@@ -736,6 +740,65 @@ const AppDashboard = () => {
     
         return () => clearInterval(interval);
     }, [iptvTests, firestore, userId, sendIptvMessage, toast]);
+
+    const sendIptvFollowUpMessage = useCallback((test: IPTVTest) => {
+        if (!automationSettings?.iptvFollowUpMessage || !userToken || !firestore || !userId) return;
+
+        const messageTemplate = automationSettings.iptvFollowUpMessage;
+        
+        const formattedMessage = messageTemplate
+            .replace(/{nome}/g, test.name)
+            .replace(/{usuario}/g, test.user)
+            .replace(/{senha}/g, test.pass)
+            .replace(/{dispositivo}/g, test.device)
+            .replace(/{duracao}/g, `${test.duration} hora(s)`)
+            .replace(/{link}/g, test.link || '')
+            .replace(/{observacao}/g, test.notes || '');
+
+        sendMessage(test.phone, formattedMessage, userToken.token)
+            .then(() => {
+                const testDocRef = doc(firestore, 'users', userId, 'iptv_tests', test.id);
+                updateDoc(testDocRef, { followUpSentAt: Timestamp.now() }).catch(err => {
+                    errorEmitter.emit('permission-error', new FirestorePermissionError({
+                        path: testDocRef.path,
+                        operation: 'update',
+                        requestResourceData: { followUpSentAt: 'now' }
+                    }));
+                });
+                toast({
+                    title: 'Mensagem de Follow-up Enviada',
+                    description: `Mensagem enviada para ${test.name}.`
+                });
+            })
+            .catch(error => {
+                toast({
+                    variant: 'destructive',
+                    title: `Falha ao enviar follow-up`,
+                    description: `Não foi possível enviar mensagem para ${test.phone}: ${error.message}`,
+                });
+            });
+    }, [automationSettings, userToken, firestore, userId, toast]);
+
+    useEffect(() => {
+        if (!automationSettings?.iptvFollowUpIsEnabled || !iptvTests || !automationSettings.iptvFollowUpHours) {
+            return;
+        }
+        
+        const checkInterval = setInterval(() => {
+            const expiredTestsNeedingFollowUp = iptvTests.filter(t => t.status === 'expired' && !t.followUpSentAt);
+            
+            expiredTestsNeedingFollowUp.forEach(test => {
+                const endTime = addHours(test.startTime.toDate(), test.duration);
+                const followUpTime = addHours(endTime, automationSettings.iptvFollowUpHours!);
+                
+                if (isPast(followUpTime)) {
+                    sendIptvFollowUpMessage(test);
+                }
+            });
+        }, 60000); // Check every minute
+    
+        return () => clearInterval(checkInterval);
+    }, [iptvTests, automationSettings, sendIptvFollowUpMessage]);
 
 
     const renderPage = () => {
@@ -3188,6 +3251,9 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
 
     const [iptvTestStartMessage, setIptvTestStartMessage] = useState(config?.iptvTestStartMessage ?? 'Seu teste IPTV foi iniciado! Usuário: {usuario}, Senha: {senha}. Válido por {duracao}.');
     const [iptvTestEndMessage, setIptvTestEndMessage] = useState(config?.iptvTestEndMessage ?? 'Seu teste IPTV expirou. Para contratar, entre em contato conosco.');
+    const [iptvFollowUpIsEnabled, setIptvFollowUpIsEnabled] = useState(config?.iptvFollowUpIsEnabled ?? false);
+    const [iptvFollowUpHours, setIptvFollowUpHours] = useState(config?.iptvFollowUpHours ?? 24);
+    const [iptvFollowUpMessage, setIptvFollowUpMessage] = useState(config?.iptvFollowUpMessage ?? 'Olá {nome}, vimos que seu teste IPTV expirou. Gostaria de contratar um de nossos planos?');
 
     useEffect(() => {
         setIsEnabled(config?.isEnabled ?? false);
@@ -3198,6 +3264,9 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
         setSupportEndMessage(config?.supportEndMessage ?? 'Olá {cliente}! Seu suporte foi concluído. Se precisar de mais alguma coisa, é só contatar.');
         setIptvTestStartMessage(config?.iptvTestStartMessage ?? 'Seu teste IPTV foi iniciado! Usuário: {usuario}, Senha: {senha}. Válido por {duracao}.');
         setIptvTestEndMessage(config?.iptvTestEndMessage ?? 'Seu teste IPTV expirou. Para contratar, entre em contato conosco.');
+        setIptvFollowUpIsEnabled(config?.iptvFollowUpIsEnabled ?? false);
+        setIptvFollowUpHours(config?.iptvFollowUpHours ?? 24);
+        setIptvFollowUpMessage(config?.iptvFollowUpMessage ?? 'Olá {nome}, vimos que seu teste IPTV expirou. Gostaria de contratar um de nossos planos?');
     }, [config]);
   
     const handleSaveAutomation = () => {
@@ -3217,6 +3286,9 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
             supportEndMessage,
             iptvTestStartMessage,
             iptvTestEndMessage,
+            iptvFollowUpIsEnabled,
+            iptvFollowUpHours,
+            iptvFollowUpMessage
         };
 
         if (config?.id) {
@@ -3422,6 +3494,57 @@ const AutomationPage = ({ config }: { config: AutomationConfig | undefined }) =>
                                     {iptvAvailableTags.map(tag => (
                                         <code key={tag} className="bg-muted px-1.5 py-0.5 rounded-sm text-xs">{tag}</code>
                                     ))}
+                                </div>
+                            </div>
+                            <Separator className="my-6" />
+                            <div className="space-y-6">
+                                <CardHeader className="p-0">
+                                    <CardTitle>Follow-up Pós-Teste</CardTitle>
+                                    <CardDescription>
+                                        Envie uma mensagem de acompanhamento um tempo após o teste expirar.
+                                    </CardDescription>
+                                </CardHeader>
+                                <div className="flex items-center space-x-4 rounded-md border p-4">
+                                    <Clock />
+                                    <div className="flex-1 space-y-1">
+                                        <p className="text-sm font-medium leading-none">
+                                            Ativar Follow-up Pós-Teste
+                                        </p>
+                                    </div>
+                                    <Switch checked={iptvFollowUpIsEnabled} onCheckedChange={setIptvFollowUpIsEnabled} />
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-4 items-center gap-4">
+                                    <Label htmlFor="iptv-followup-hours" className="md:text-right">Enviar após</Label>
+                                    <div className="col-span-3 flex items-center gap-2">
+                                        <Input
+                                            id="iptv-followup-hours"
+                                            type="number"
+                                            value={iptvFollowUpHours}
+                                            onChange={(e) => setIptvFollowUpHours(Number(e.target.value))}
+                                            className="w-24"
+                                            disabled={!iptvFollowUpIsEnabled}
+                                        />
+                                        <span>hora(s) da expiração.</span>
+                                    </div>
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="iptv-followup-message">Mensagem de Follow-up</Label>
+                                    <Textarea
+                                        id="iptv-followup-message"
+                                        placeholder="Digite sua mensagem de follow-up..."
+                                        value={iptvFollowUpMessage}
+                                        onChange={(e) => setIptvFollowUpMessage(e.target.value)}
+                                        className="min-h-[120px]"
+                                        disabled={!iptvFollowUpIsEnabled}
+                                    />
+                                </div>
+                                <div className="text-sm text-muted-foreground">
+                                    <p>Variáveis disponíveis:</p>
+                                    <div className="flex flex-wrap gap-x-2 gap-y-1 mt-1">
+                                        {iptvAvailableTags.map(tag => (
+                                            <code key={tag} className="bg-muted px-1.5 py-0.5 rounded-sm text-xs">{tag}</code>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
                         </CardContent>
@@ -5505,6 +5628,7 @@ const IPTVTestsPage = ({ tests, sendIptvMessage }: { tests: IPTVTest[], sendIptv
             ...testData,
             startTime: Timestamp.now(),
             status: 'active',
+            followUpSentAt: null,
         };
 
         const testsCol = collection(firestore, 'users', userId, 'iptv_tests');
@@ -5669,6 +5793,10 @@ const IPTVTestCard = ({ test, onExpireNow, onDelete }: { test: IPTVTest, onExpir
         }
     }, [test]);
 
+    const getEndTime = () => {
+        return addHours(test.startTime.toDate(), test.duration);
+    }
+
     return (
         <Card className="flex flex-col">
             <CardHeader>
@@ -5752,9 +5880,14 @@ const IPTVTestCard = ({ test, onExpireNow, onDelete }: { test: IPTVTest, onExpir
                         <Clock className="mr-2 h-4 w-4" /> {timeLeft || 'Calculando...'}
                     </Badge>
                  ) : (
+                    <>
                     <Badge variant="destructive" className="w-full justify-center text-base py-2">
                         Expirado
                     </Badge>
+                    <p className="text-xs text-muted-foreground w-full text-center">
+                        Em {format(getEndTime(), 'dd/MM/yy \'às\' HH:mm')}
+                    </p>
+                    </>
                  )}
             </CardFooter>
         </Card>

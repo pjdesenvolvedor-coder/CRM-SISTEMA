@@ -84,7 +84,10 @@
             "supportStartMessage": { "type": "string", "description": "Message sent when a client is marked for support." },
             "supportEndMessage": { "type": "string", "description": "Message sent when a client's support is resolved." },
             "iptvTestStartMessage": { "type": "string", "description": "Message sent when an IPTV test starts." },
-            "iptvTestEndMessage": { "type": "string", "description": "Message sent when an IPTV test ends." }
+            "iptvTestEndMessage": { "type": "string", "description": "Message sent when an IPTV test ends." },
+            "iptvFollowUpIsEnabled": { "type": "boolean", "description": "Whether the IPTV follow-up message is enabled." },
+            "iptvFollowUpHours": { "type": "number", "description": "Hours after test expiration to send follow-up message." },
+            "iptvFollowUpMessage": { "type": "string", "description": "The message template for the IPTV follow-up." }
         },
         "required": ["isEnabled", "message", "reminderIsEnabled", "reminderMessage"]
     },
@@ -139,7 +142,8 @@
         "notes": { "type": "string", "description": "Additional notes about the IPTV test." },
         "duration": { "type": "number", "description": "Duration of the test in hours." },
         "startTime": { "type": "string", "format": "date-time", "description": "Timestamp when the test started." },
-        "status": { "type": "string", "enum": ["active", "expired"], "description": "The status of the test." }
+        "status": { "type": "string", "enum": ["active", "expired"], "description": "The status of the test." },
+        "followUpSentAt": { "type": "string", "format": "date-time", "description": "Timestamp when the follow-up message was sent." }
       },
       "required": ["name", "phone", "user", "pass", "device", "duration", "startTime", "status"]
     }
