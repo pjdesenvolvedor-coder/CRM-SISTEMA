@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save, LogIn, KeyRound, Tv2, Link as LinkIcon } from 'lucide-react';
+import { Bot, Users, PlusCircle, MessageSquare, Home, Users2, DollarSign, Settings, MoreHorizontal, Trash, Edit, CalendarIcon, CreditCard, Banknote, User, Eye, Phone, Mail, FileText, BadgeCheck, BadgeX, ShoppingCart, Wallet, ChevronUp, ChevronDown, Repeat, AlertTriangle, ArrowUpDown, Clock, Search, XIcon, ShieldAlert, Copy, LifeBuoy, CheckCircle, Flame, ClipboardList, Check, LogOut, Send, Download, Upload, ImageIcon, Megaphone, MessageCircle, Mailbox, PowerOff, RefreshCw, Save, LogIn, KeyRound, Tv2, Link as LinkIcon, XCircle } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import ZapConnectCard, { type ConnectionStatus } from './zap-connect-card';
@@ -2327,21 +2327,21 @@ const SettingsPage = ({ subscriptions, allClients, userConnection }: { subscript
             setError('Usuário ou banco de dados não disponível.');
             return;
         }
-
+    
         setIsTokenPending(true);
         setError('');
-
+    
         try {
             const userConnectionColRef = collection(firestore, 'users', userId, 'user_connection');
             const docRef = userConnection ? doc(userConnectionColRef, userConnection.id) : doc(userConnectionColRef);
-            
+    
             const dataToSave: Omit<UserConnection, 'id'> = {
                 token: token.trim(),
                 userId: userId,
             };
-
+    
             await setDoc(docRef, dataToSave, { merge: true });
-
+    
             toast({ title: 'Sucesso!', description: 'Chave de conexão salva.' });
         } catch (e) {
             console.error("Error saving token:", e);
@@ -2996,7 +2996,7 @@ const ViewClientDetailsDialog = ({ client, trigger, onEdit, subscriptions, onUpd
             />
         </>
     )
-}
+};
 
 const RenewSubscriptionDialog = ({ isOpen, onOpenChange, client, onSave }: { isOpen: boolean; onOpenChange: (isOpen: boolean) => void; client: Client; onSave: (updatedClient: Client) => void; }) => {
     const [amountPaid, setAmountPaid] = useState<number | string>('');
@@ -5524,6 +5524,38 @@ const IPTVTestsPage = ({ tests, sendIptvMessage }: { tests: IPTVTest[], sendIptv
         setIsDialogOpen(false);
     };
 
+    const handleExpireNow = (test: IPTVTest) => {
+        if (!firestore || !userId) return;
+        const testDocRef = doc(firestore, 'users', userId, 'iptv_tests', test.id);
+        updateDoc(testDocRef, { status: 'expired' })
+            .then(() => {
+                sendIptvMessage(test, 'end');
+                toast({ title: 'Teste finalizado', description: `O teste para ${test.name} foi marcado como expirado.` });
+            })
+            .catch(err => {
+                errorEmitter.emit('permission-error', new FirestorePermissionError({
+                    path: testDocRef.path,
+                    operation: 'update',
+                    requestResourceData: { status: 'expired' }
+                }));
+            });
+    };
+
+    const handleCancelTest = (testId: string) => {
+        if (!firestore || !userId) return;
+        const testDocRef = doc(firestore, 'users', userId, 'iptv_tests', testId);
+        deleteDoc(testDocRef)
+            .then(() => {
+                toast({ title: 'Teste cancelado', description: 'O teste foi removido permanentemente.' });
+            })
+            .catch(err => {
+                errorEmitter.emit('permission-error', new FirestorePermissionError({
+                    path: testDocRef.path,
+                    operation: 'delete'
+                }));
+            });
+    };
+
     return (
         <div className="w-full space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
@@ -5538,7 +5570,7 @@ const IPTVTestsPage = ({ tests, sendIptvMessage }: { tests: IPTVTest[], sendIptv
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {tests.length > 0 ? (
-                    tests.map(test => <IPTVTestCard key={test.id} test={test} />)
+                    tests.map(test => <IPTVTestCard key={test.id} test={test} onExpireNow={() => handleExpireNow(test)} onDelete={() => handleCancelTest(test.id)} />)
                 ) : (
                     <div className="col-span-full text-center py-10 border rounded-lg">
                         <Tv2 className="mx-auto h-12 w-12 text-muted-foreground" />
@@ -5554,20 +5586,26 @@ const IPTVTestsPage = ({ tests, sendIptvMessage }: { tests: IPTVTest[], sendIptv
 };
 
 const IPTVExpiredTestsPage = ({ tests }: { tests: IPTVTest[] }) => {
-     const firestore = useFirestore();
+    const firestore = useFirestore();
     const { user } = useSecurity();
     const userId = user?.uid;
+    const { toast } = useToast();
 
     const handleDelete = (testId: string) => {
         if (!firestore || !userId) return;
         const testDocRef = doc(firestore, 'users', userId, 'iptv_tests', testId);
-        deleteDoc(testDocRef).catch(err => {
-            errorEmitter.emit('permission-error', new FirestorePermissionError({
-                path: testDocRef.path,
-                operation: 'delete'
-            }));
-        });
+        deleteDoc(testDocRef)
+            .then(() => {
+                toast({ title: 'Teste excluído', description: 'O teste vencido foi removido.' });
+            })
+            .catch(err => {
+                errorEmitter.emit('permission-error', new FirestorePermissionError({
+                    path: testDocRef.path,
+                    operation: 'delete'
+                }));
+            });
     };
+
     return (
         <div className="w-full space-y-6">
             <div className='text-center sm:text-left mb-6'>
@@ -5576,7 +5614,7 @@ const IPTVExpiredTestsPage = ({ tests }: { tests: IPTVTest[] }) => {
             </div>
              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {tests.length > 0 ? (
-                    tests.map(test => <IPTVTestCard key={test.id} test={test} onDelete={handleDelete} />)
+                    tests.map(test => <IPTVTestCard key={test.id} test={test} onDelete={() => handleDelete(test.id)} />)
                 ) : (
                     <div className="col-span-full text-center py-10 border rounded-lg">
                         <Tv2 className="mx-auto h-12 w-12 text-muted-foreground" />
@@ -5589,7 +5627,7 @@ const IPTVExpiredTestsPage = ({ tests }: { tests: IPTVTest[] }) => {
     );
 };
 
-const IPTVTestCard = ({ test, onDelete }: { test: IPTVTest, onDelete?: (testId: string) => void }) => {
+const IPTVTestCard = ({ test, onExpireNow, onDelete }: { test: IPTVTest, onExpireNow?: () => void, onDelete?: () => void }) => {
     const [timeLeft, setTimeLeft] = useState('');
     const { toast } = useToast();
 
@@ -5634,27 +5672,59 @@ const IPTVTestCard = ({ test, onDelete }: { test: IPTVTest, onDelete?: (testId: 
     return (
         <Card className="flex flex-col">
             <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                    <span>{test.name}</span>
-                     {onDelete && (
-                         <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-6 w-6">
-                                    <Trash className="h-4 w-4 text-destructive" />
+                <CardTitle className="flex items-start justify-between">
+                    <span className='mr-2'>{test.name}</span>
+                    {onDelete && (
+                         <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0">
+                                    <MoreHorizontal className="h-4 w-4" />
                                 </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                                <AlertDialogHeader>
-                                    <AlertDialogTitle>Excluir teste?</AlertDialogTitle>
-                                    <AlertDialogDescription>Essa ação não pode ser desfeita.</AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => onDelete(test.id)}>Excluir</AlertDialogAction>
-                                </AlertDialogFooter>
-                            </AlertDialogContent>
-                        </AlertDialog>
-                     )}
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                                {test.status === 'active' && onExpireNow && (
+                                     <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                             <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                                                <CheckCircle className="mr-2 h-4 w-4" />
+                                                Finalizar Agora
+                                            </DropdownMenuItem>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                                <AlertDialogTitle>Finalizar este teste?</AlertDialogTitle>
+                                                <AlertDialogDescription>Isso marcará o teste como expirado e enviará a mensagem final.</AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                                <AlertDialogAction onClick={onExpireNow}>Finalizar</AlertDialogAction>
+                                            </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                    </AlertDialog>
+                                )}
+                                <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive focus:text-destructive">
+                                            {test.status === 'active' ? <XCircle className="mr-2 h-4 w-4" /> : <Trash className="mr-2 h-4 w-4" />}
+                                            {test.status === 'active' ? 'Cancelar Teste' : 'Excluir Teste'}
+                                        </DropdownMenuItem>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>Você tem certeza?</AlertDialogTitle>
+                                            <AlertDialogDescription>Essa ação não pode ser desfeita e irá remover permanentemente este teste.</AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                            <AlertDialogAction onClick={onDelete}>
+                                                {test.status === 'active' ? 'Sim, cancelar' : 'Sim, excluir'}
+                                            </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    )}
                 </CardTitle>
                 <CardDescription>{test.phone}</CardDescription>
             </CardHeader>
@@ -5785,3 +5855,5 @@ const StartIPTVTestDialog = ({ isOpen, onOpenChange, onSave }: { isOpen: boolean
 
 
 export default AppDashboard;
+
+    
